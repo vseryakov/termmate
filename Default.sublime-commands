@@ -1,0 +1,10 @@
+[
+    {
+        "caption": "ChatView: Start Chat",
+        "command": "chat_view_cli"
+    },
+    {
+        "caption": "ChatView: Prompt",
+        "command": "chat_view_prompt"
+    }
+]

@@ -1,0 +1,8 @@
+{
+    // Sets the logging level.
+    // Valid values are "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
+    "log_level": "ERROR",
+
+    // Path or command name for the coding CLI executable.
+    "agent_command": ""
+}

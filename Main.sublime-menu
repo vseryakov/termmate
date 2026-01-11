@@ -1,0 +1,40 @@
+[
+    {
+        "caption": "Preferences",
+        "mnemonic": "n",
+        "id": "preferences",
+        "children": [
+            {
+                "caption": "Package Settings",
+                "mnemonic": "P",
+                "id": "package-settings",
+                "children": [
+                    {
+                        "caption": "ChatView",
+                        "children": [
+                            {
+                                "command": "edit_settings",
+                                "args": {
+                                    "base_file": "${packages}/ChatView/ChatView.sublime-settings",
+                                    "default": "{\n\t\"chatview_command\": \"\"\n}\n"
+                                },
+                                "caption": "Settings"
+                            },
+                            {
+                                "caption": "-"
+                            },
+                            {
+                                "command": "edit_settings",
+                                "args": {
+                                    "base_file": "${packages}/ChatView/ChatView.sublime-keymap",
+                                    "default": "[\n\t{ \"keys\": [\"ctrl+alt+g\"], \"command\": \"chat_view_cli\" }\n]\n"
+                                },
+                                "caption": "Key Bindings"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

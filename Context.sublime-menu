@@ -1,0 +1,6 @@
+[
+    {
+        "caption": "Chat with ChatView",
+        "command": "chat_view_add_context"
+    }
+]
