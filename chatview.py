@@ -48,10 +48,12 @@ class LoadingAnimation:
 
     def start(self, region):
         """Start the loading animation at the specified region."""
+        # ALWAYS update the region provider, even if already loading
+        self.region_provider = region
+
         if not self.is_loading:
             self.is_loading = True
             self.frame_index = 0
-            self.region_provider = region
             self._update_animation()
 
     def stop(self):
@@ -116,9 +118,9 @@ class ChatSession:
         self.loading_animation.stop()
 
     def send_input(self, user_input):
-        """Start animation and set timeout to stop after 3 seconds."""
+        """Start animation and set timeout to stop after 2 seconds."""
         self.loading_animation.start(self.loading_region)
-        sublime.set_timeout(lambda: self.stop(), 3000)
+        sublime.set_timeout(lambda: self.stop(), 2000)
 
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
