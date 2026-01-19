@@ -11,9 +11,12 @@ import json
 import os
 import shutil
 import sys
+import logging
 from typing import Optional, Dict, Any, AsyncIterator, List, Callable, Union
 from enum import Enum
 
+# logger by package name
+LOG = logging.getLogger(__package__)
 
 class MessageType(Enum):
     """Types of messages that can be received from Claude"""
@@ -74,7 +77,9 @@ class ClaudeAgentOptions:
         allowed_tools: Optional[List[str]] = None,
         permission_mode: str = "default",
         model: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        auth_token: Optional[str] = None
     ):
         self.cwd = cwd or os.getcwd()
         self.cli_path = cli_path
@@ -84,9 +89,11 @@ class ClaudeAgentOptions:
         self.permission_mode = permission_mode  # 'default', 'acceptEdits', 'bypassPermissions'
         self.model = model
         self.api_key = api_key
+        self.base_url = base_url
+        self.auth_token = auth_token
 
 
-class ClaudeSDKClient:
+class ClaudeCodeAgent:
     """
     Client for bidirectional, interactive conversations with Claude Code.
 
@@ -158,8 +165,14 @@ class ClaudeSDKClient:
         env = os.environ.copy()
         env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-py"
 
-        if self.options.api_key:
+        if self.options.api_key is not None:
             env["ANTHROPIC_API_KEY"] = self.options.api_key
+
+        if self.options.base_url is not None:
+            env["ANTHROPIC_BASE_URL"] = self.options.base_url
+
+        if self.options.auth_token is not None:
+            env["ANTHROPIC_AUTH_TOKEN"] = self.options.auth_token
 
         # Start subprocess
         self.process = await asyncio.create_subprocess_exec(
@@ -237,6 +250,7 @@ class ClaudeSDKClient:
 
                 try:
                     data = json.loads(line_str)
+                    LOG.debug(f"claude msg: {data}")
                     message = self._parse_message(data)
                     await self._message_queue.put(message)
                 except json.JSONDecodeError as e:
@@ -376,10 +390,6 @@ class ClaudeSDKClient:
         await self.disconnect()
 
 
-# ==========================================
-# 3. Simplified Query Function
-# ==========================================
-
 async def query(
     prompt: str,
     options: Optional[ClaudeAgentOptions] = None
@@ -407,7 +417,7 @@ async def query(
     if options is None:
         options = ClaudeAgentOptions()
 
-    client = ClaudeSDKClient(options=options)
+    client = ClaudeCodeAgent(options=options)
 
     try:
         await client.connect(prompt=prompt)

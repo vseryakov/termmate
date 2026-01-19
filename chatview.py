@@ -1,12 +1,15 @@
 import logging
 import os
 
+import asyncio
+import threading
 import sublime
 import sublime_plugin
 
 from . import plugin
+from .genfoundry.claude_agent import ClaudeCodeAgent, ClaudeAgentOptions, AssistantMessage, TextBlock
 
-# logger by pachage name
+# logger by package name
 LOG = logging.getLogger(__package__)
 
 CHAT_VIEW_NAME = "ChatView"
@@ -100,14 +103,165 @@ class LoadingAnimation:
         sublime.set_timeout(lambda: self._update_animation(), 100)
 
 
+class AgentThread(threading.Thread):
+    """
+    Background thread to run the asyncio Claude Agent.
+    """
+    def __init__(self, cwd, on_message, cli_path=None, anthropic_config=None):
+        super().__init__()
+        self.cwd = cwd
+        self.on_message = on_message
+        self.cli_path = cli_path
+        self.anthropic_config = anthropic_config or {}
+        self.loop = None
+        self.agent = None
+        self.input_queue = None
+        self.running = True
+        self.daemon = True
+
+    def run(self):
+        """Run the asyncio loop."""
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.input_queue = asyncio.Queue()
+            self.loop.run_until_complete(self._agent_loop())
+        finally:
+            if self.loop:
+                self.loop.close()
+
+    async def _agent_loop(self):
+        """Main async loop for the agent."""
+        options = ClaudeAgentOptions(
+            cwd=self.cwd,
+            cli_path=self.cli_path,
+            api_key=self.anthropic_config.get("ANTHROPIC_API_KEY"),
+            base_url=self.anthropic_config.get("ANTHROPIC_BASE_URL"),
+            auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN")
+        )
+
+        try:
+            async with ClaudeCodeAgent(options) as agent:
+                self.agent = agent
+
+                # Create tasks for reading inputs and handling agent messages
+                input_task = asyncio.create_task(self._process_inputs())
+                receive_task = asyncio.create_task(self._receive_messages())
+
+                # Wait until we are stopped
+                while self.running:
+                    await asyncio.sleep(0.1)
+
+                # Cleanup
+                input_task.cancel()
+                receive_task.cancel()
+                try:
+                    await input_task
+                    await receive_task
+                except asyncio.CancelledError:
+                    pass
+
+        except Exception as e:
+            LOG.error(f"Agent error: {e}")
+            error_msg = str(e)
+            sublime.set_timeout(lambda: self.on_message(("error", error_msg)), 0)
+
+    async def _process_inputs(self):
+        """Read from input queue and send to agent."""
+        while self.running:
+            text = await self.input_queue.get()
+            if text:
+                await self.agent.send_message(text)
+
+    async def _receive_messages(self):
+        """Read messages from agent and callback."""
+        async for message in self.agent.receive_messages():
+            if not self.running:
+                break
+
+            # Dispatch to main thread
+            sublime.set_timeout(lambda m=message: self.on_message(m), 0)
+
+    def send(self, text):
+        """Queue input to be sent."""
+        if self.loop and self.input_queue:
+            LOG.debug(f"Send to agent msg: {text}")
+            self.loop.call_soon_threadsafe(self.input_queue.put_nowait, text)
+
+    def stop(self):
+        """Signal thread to stop."""
+        self.running = False
+
+
 class ChatSession:
     """
     Manages the state and UI for a single ChatView session.
     """
-    def __init__(self, window, view):
+    def __init__(self, window, view, cwd):
         self.window = window
         self.chat_view = view
         self.loading_animation = LoadingAnimation(self.chat_view)
+
+        # Load cli_path from settings
+        settings = sublime.load_settings("ChatView.sublime-settings")
+        cli_path = settings.get("agent_command")
+        if not cli_path:
+            cli_path = None
+
+        anthropic_config = {
+            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
+            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
+            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
+        }
+
+        # Initialize background agent thread
+        self.agent_thread = AgentThread(cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config)
+        self.agent_thread.start()
+
+    def _handle_agent_message(self, message):
+        """Handle messages received from the agent thread."""
+        LOG.info(f"agent message {message}")
+        # Handle error strings passed from thread wrapper
+        if message == "error":
+            # The actual error message is passed as second arg in the thread,
+            # but here we might receive the raw tuple or just be careful.
+            # actually my AgentThread passes ("error", str(e)) but let's fix that signature in AgentThread
+            pass
+
+        # Check for error tuple/custom protocol from AgentThread
+        if isinstance(message, tuple) and message[0] == "error":
+            self.chat_view.run_command("chat_append", {"text": f"\n\nError: {message[1]}\n"})
+            self.stop_loading()
+            return
+
+        # Handle Claude Agent Message objects
+        if hasattr(message, "type"):
+            if message.type == "assistant":
+                sublime.set_timeout(lambda: self.loading_animation.start(self.loading_region), 0)
+
+                # Extract text content
+                text_content = ""
+                if hasattr(message, "content"):
+                    for block in message.content:
+                        if hasattr(block, "text"):
+                            text_content += block.text
+
+                if text_content:
+                    self.on_chat_content(text_content)
+
+            elif message.type == "error":
+                self.chat_view.run_command("chat_append", {"text": f"\n\nError: {message.content}\n"})
+                self.stop_loading()
+
+            elif message.type == "result":
+                # Stop loading on turn completion (heuristic)
+                self.stop_loading()
+
+    def stop_loading(self):
+        sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
+
+    def on_chat_content(self, text):
+        sublime.set_timeout(lambda: self.chat_view.run_command("chat_append", {"text": text}), 0)
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
@@ -116,11 +270,12 @@ class ChatSession:
 
     def stop(self):
         self.loading_animation.stop()
+        if self.agent_thread:
+            self.agent_thread.stop()
 
     def send_input(self, user_input):
-        """Start animation and set timeout to stop after 2 seconds."""
-        self.loading_animation.start(self.loading_region)
-        sublime.set_timeout(lambda: self.stop(), 2000)
+        """Start animation and send to agent."""
+        self.agent_thread.send(user_input)
 
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
@@ -150,13 +305,13 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chat_view.run_command("append", {"characters": "Starting ChatView CLI session...\n"})
         cwd = get_best_dir(chat_view)
         if cwd:
-            chat_view.run_command("append", {"characters": "cwd: %s\n" % cwd})
+            chat_view.run_command("append", {"characters": f"cwd: {cwd}\n"})
 
         # Set input start position
         chat_view.settings().set("chatview_input_start", chat_view.size())
 
         # Create and start the ChatSession
-        session = ChatSession(self.window, chat_view)
+        session = ChatSession(self.window, chat_view, cwd)
         window_id = self.window.id()
         chatview_clients[window_id] = session
 
@@ -192,7 +347,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
 
         # Send to session
         chatview_clients[window_id].send_input(user_input)
-        LOG.info("User enter prompt %s", user_input)
+        LOG.info(f"User enter prompt {user_input}")
 
 
 class ChatViewListener(sublime_plugin.EventListener):
@@ -213,7 +368,7 @@ class ChatViewListener(sublime_plugin.EventListener):
                     except Exception:
                         pass
                     del chatview_clients[window_id]
-                    LOG.info("Exit ChatView CLI for window %s" % window_id)
+                    LOG.info(f"Exit ChatView CLI for window {window_id}")
             LOG.info("ChatView closed")
 
     def on_selection_modified(self, view):
@@ -546,7 +701,7 @@ class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, files=[], dirs=[]):
         # Handle both files and dirs arguments, though typically called with dirs from sidebar
         paths = files + dirs
-        LOG.info("set workspace path %s", paths)
+        LOG.info(f"set workspace path {paths}")
         if not paths:
             return
 
