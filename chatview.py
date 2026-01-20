@@ -12,9 +12,10 @@ from .genfoundry.claude_agent import ClaudeCodeAgent, ClaudeAgentOptions, Assist
 # logger by package name
 LOG = logging.getLogger(__package__)
 
+CHAT_VIEW_FLAG = "chatview_chat"
 CHAT_INPUT_START = "chatview_input_start"
 CHAT_WORKSPACE = "chatview_active_workspace"
-CHAT_VIEW_NAME = "ChatView"
+CHAT_VIEW_NAME = "Chat View"
 PROMPT_PREFIX = "\n❯ "
 chatview_clients = {}
 
@@ -232,7 +233,7 @@ class ChatSession:
 
         # Check for error tuple/custom protocol from AgentThread
         if isinstance(message, tuple) and message[0] == "error":
-            self.chat_view.run_command("chat_append", {"text": f"\n\nError: {message[1]}\n"})
+            self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message[1]}\n"})
             self.stop_loading()
             return
 
@@ -252,7 +253,7 @@ class ChatSession:
                     self.on_chat_content(text_content)
 
             elif message.type == "error":
-                self.chat_view.run_command("chat_append", {"text": f"\n\nError: {message.content}\n"})
+                self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message.content}\n"})
                 self.stop_loading()
 
             elif message.type == "result":
@@ -263,7 +264,7 @@ class ChatSession:
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
 
     def on_chat_content(self, text):
-        sublime.set_timeout(lambda: self.chat_view.run_command("chat_append", {"text": text}), 0)
+        sublime.set_timeout(lambda: self.chat_view.run_command("chat_output_append", {"text": text}), 0)
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
@@ -287,10 +288,10 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
     def run(self, initial_msg="", send_immediate=False):
         # Try to find and focus existing chat view
         for view in self.window.views():
-            if view.settings().get("chatview_chat", False):
+            if view.settings().get(CHAT_VIEW_FLAG, False):
                 self.window.focus_view(view)
                 if initial_msg:
-                    view.run_command("chat_prompt", {"text": initial_msg})
+                    view.run_command("chat_input_prompt", {"text": initial_msg})
                 return
 
         # Create a new view
@@ -302,7 +303,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set("draw_minimap", False)
         chat_view.settings().set("line_numbers", False)
         chat_view.settings().set("word_wrap", True)
-        chat_view.settings().set("chatview_chat", True)
+        chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
         chat_view.run_command("append", {"characters": "Starting ChatView CLI session...\n"})
         cwd = get_best_dir(chat_view)
@@ -318,7 +319,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chatview_clients[window_id] = session
 
         # Show initial prompt
-        sublime.set_timeout(lambda: chat_view.run_command("chat_prompt", {"text": initial_msg}), 0)
+        chat_view.run_command("chat_input_prompt", {"text": initial_msg})
 
 
 class ChatViewSendInputCommand(sublime_plugin.TextCommand):
@@ -345,7 +346,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         sublime.status_message("Sending message...")
 
         # Show input text and next prompt (simulated local echo/confirmation)
-        self.view.run_command("chat_prompt", {"text": ""})
+        self.view.run_command("chat_input_prompt", {"text": ""})
 
         # Send to session
         chatview_clients[window_id].send_input(user_input)
@@ -378,7 +379,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         Restrict cursor movement to the editable area.
         Allows selecting history for copy, but prevents placing the caret in history.
         """
-        if not view.settings().get("chatview_chat", False) and view.name() != CHAT_VIEW_NAME:
+        if not view.settings().get(CHAT_VIEW_FLAG, False) and view.name() != CHAT_VIEW_NAME:
             return
         if not view.settings().has(CHAT_INPUT_START):
             return
@@ -412,7 +413,7 @@ class ChatViewListener(sublime_plugin.EventListener):
     def on_text_command(self, view, command_name, args):
         """Intercept text commands to protect content before prompt area."""
         # Only monitor ChatView chat views
-        if not view.settings().get("chatview_chat", False) and view.name() != CHAT_VIEW_NAME:
+        if not view.settings().get(CHAT_VIEW_FLAG, False) and view.name() != CHAT_VIEW_NAME:
             return None
 
         input_start = view.settings().get(CHAT_INPUT_START, 0)
@@ -458,7 +459,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         Provide filename completions when typing '@' in the prompt area.
         Shows three categories: open files, current directory files, and subdirectories.
         """
-        if not view.settings().get("chatview_chat", False):
+        if not view.settings().get(CHAT_VIEW_FLAG, False):
             return None
 
         # Check if in editable area
@@ -493,7 +494,7 @@ class ChatViewListener(sublime_plugin.EventListener):
                 continue
 
             # Skip the chat view itself
-            if v.settings().get("chatview_chat", False):
+            if v.settings().get(CHAT_VIEW_FLAG, False):
                 continue
 
             file_name = os.path.basename(file_path)
@@ -552,7 +553,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         """
         Trigger autocompletion immediately when '@' is typed.
         """
-        if not view.settings().get("chatview_chat", False):
+        if not view.settings().get(CHAT_VIEW_FLAG, False):
             return
 
         # Check if the last character typed was '@'
@@ -580,7 +581,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             })
 
 
-class ChatAppendCommand(sublime_plugin.TextCommand):
+class ChatOutputAppendCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         input_start = self.view.settings().get(CHAT_INPUT_START, 0)
@@ -590,7 +591,7 @@ class ChatAppendCommand(sublime_plugin.TextCommand):
         self.view.show(self.view.size())
 
 
-class ChatPromptCommand(sublime_plugin.TextCommand):
+class ChatInputPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         self.view.insert(edit, self.view.size(), "\n\n")
@@ -637,7 +638,7 @@ class ChatViewAddContextCommand(sublime_plugin.TextCommand):
         # Find or create ChatView chat view
         chat_view = None
         for v in window.views():
-            if v.settings().get("chatview_chat", False):
+            if v.settings().get(CHAT_VIEW_FLAG, False):
                 chat_view = v
                 break
 
@@ -677,7 +678,7 @@ class ChatViewPromptCommand(sublime_plugin.WindowCommand):
         # Try to find existing chat view
         chat_view = None
         for v in self.window.views():
-            if v.settings().get("chatview_chat", False):
+            if v.settings().get(CHAT_VIEW_FLAG, False):
                 chat_view = v
                 break
 
