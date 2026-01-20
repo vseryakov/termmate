@@ -697,6 +697,34 @@ class ChatViewPromptCommand(sublime_plugin.WindowCommand):
         return ChatViewPromptHandler()
 
 
+class ChatViewSetWorkspaceInputHandler(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "path"
+
+    def placeholder(self):
+        return "Enter workspace path..."
+
+    def description(self, text):
+        return "Set WorkSpace: " + text if text else "Set WorkSpace Path"
+
+    def validate(self, text):
+        return os.path.isdir(os.path.expanduser(text))
+
+
+class ChatViewSetWorkspaceInputCommand(sublime_plugin.WindowCommand):
+    """
+    Command that asks for input and then calls ChatViewSetWorkspaceCommand.
+    """
+    def run(self, path):
+        if path:
+            full_path = os.path.expanduser(path)
+            # Delegate to the existing command
+            self.window.run_command("chat_view_set_workspace", {"dirs": [full_path]})
+
+    def input(self, args):
+        return ChatViewSetWorkspaceInputHandler()
+
+
 class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
     """
     Sets the active workspace for ChatView based on the selected folder in sidebar.

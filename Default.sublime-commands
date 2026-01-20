@@ -6,5 +6,9 @@
     {
         "caption": "ChatView: Prompt",
         "command": "chat_view_prompt"
+    },
+    {
+        "caption": "ChatView: Set WorkSpace",
+        "command": "chat_view_set_workspace_input"
     }
 ]

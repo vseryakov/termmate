@@ -1,0 +1,7 @@
+[
+    {
+        "caption": "Set ChatView WorkSpace",
+        "command": "chat_view_set_workspace",
+        "args": {"files": [], "dirs": []}
+    }
+]
