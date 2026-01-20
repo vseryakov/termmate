@@ -12,6 +12,8 @@ from .genfoundry.claude_agent import ClaudeCodeAgent, ClaudeAgentOptions, Assist
 # logger by package name
 LOG = logging.getLogger(__package__)
 
+CHAT_INPUT_START = "chatview_input_start"
+CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_VIEW_NAME = "ChatView"
 PROMPT_PREFIX = "\n❯ "
 chatview_clients = {}
@@ -28,7 +30,7 @@ def get_best_dir(view):
     window = view.window()
     if window:
         # Check for explicitly set workspace
-        custom_cwd = window.settings().get("chatview_active_workspace")
+        custom_cwd = window.settings().get(CHAT_WORKSPACE)
         if custom_cwd and os.path.isdir(custom_cwd):
             return custom_cwd
 
@@ -265,7 +267,7 @@ class ChatSession:
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
-        input_start = self.chat_view.settings().get("chatview_input_start", self.chat_view.size())
+        input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
         return sublime.Region(input_start, input_start)
 
     def stop(self):
@@ -308,7 +310,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
             chat_view.run_command("append", {"characters": f"cwd: {cwd}\n"})
 
         # Set input start position
-        chat_view.settings().set("chatview_input_start", chat_view.size())
+        chat_view.settings().set(CHAT_INPUT_START, chat_view.size())
 
         # Create and start the ChatSession
         session = ChatSession(self.window, chat_view, cwd)
@@ -316,7 +318,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chatview_clients[window_id] = session
 
         # Show initial prompt
-        chat_view.run_command("chat_prompt", {"text": initial_msg})
+        sublime.set_timeout(lambda: chat_view.run_command("chat_prompt", {"text": initial_msg}), 0)
 
 
 class ChatViewSendInputCommand(sublime_plugin.TextCommand):
@@ -333,7 +335,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
             sublime.status_message("No active ChatView session found")
             return
 
-        input_start = self.view.settings().get("chatview_input_start", 0)
+        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
         input_region = sublime.Region(input_start + len(PROMPT_PREFIX), self.view.size())
         user_input = self.view.substr(input_region).strip()
 
@@ -378,10 +380,10 @@ class ChatViewListener(sublime_plugin.EventListener):
         """
         if not view.settings().get("chatview_chat", False) and view.name() != CHAT_VIEW_NAME:
             return
-        if not view.settings().has("chatview_input_start"):
+        if not view.settings().has(CHAT_INPUT_START):
             return
 
-        input_start = view.settings().get("chatview_input_start", 0)
+        input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
 
         new_sel = []
@@ -413,7 +415,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         if not view.settings().get("chatview_chat", False) and view.name() != CHAT_VIEW_NAME:
             return None
 
-        input_start = view.settings().get("chatview_input_start", 0)
+        input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
 
         # Handle deletion commands - block if they affect content before prompt
@@ -460,7 +462,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             return None
 
         # Check if in editable area
-        input_start = view.settings().get("chatview_input_start", 0)
+        input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
         pos = locations[0]
 
@@ -563,7 +565,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             return
 
         # Check if in editable area
-        input_start = view.settings().get("chatview_input_start", 0)
+        input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
         if pos < editable_start:
             return
@@ -581,10 +583,10 @@ class ChatViewListener(sublime_plugin.EventListener):
 class ChatAppendCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
-        input_start = self.view.settings().get("chatview_input_start", 0)
+        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
         inserted = self.view.insert(edit, input_start, text)
         new_pos = input_start + inserted
-        self.view.settings().set("chatview_input_start", new_pos)
+        self.view.settings().set(CHAT_INPUT_START, new_pos)
         self.view.show(self.view.size())
 
 
@@ -592,7 +594,7 @@ class ChatPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         self.view.insert(edit, self.view.size(), "\n\n")
-        self.view.settings().set("chatview_input_start", self.view.size())
+        self.view.settings().set(CHAT_INPUT_START, self.view.size())
 
         # Next input prompt
         self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
@@ -719,7 +721,7 @@ class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
                     break
 
         if target_dir:
-            self.window.settings().set("chatview_active_workspace", target_dir)
+            self.window.settings().set(CHAT_WORKSPACE, target_dir)
             sublime.status_message(f"ChatView Dir set to: {target_dir}")
         else:
             sublime.status_message("No valid directory for ChatView Workspace")
