@@ -8,7 +8,7 @@
         "command": "chat_view_prompt"
     },
     {
-        "caption": "ChatView: Set WorkSpace",
+        "caption": "ChatView: Set Working Directory",
         "command": "chat_view_set_workspace_input"
     }
 ]
