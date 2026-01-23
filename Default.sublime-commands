@@ -10,5 +10,9 @@
     {
         "caption": "ChatView: Set Working Directory",
         "command": "chat_view_set_workspace_input"
+    },
+    {
+        "caption": "ChatView: Clear Session",
+        "command": "chat_view_clear_session"
     }
 ]

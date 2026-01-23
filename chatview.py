@@ -185,6 +185,23 @@ class AgentThread(threading.Thread):
             # Dispatch to main thread
             sublime.set_timeout(lambda m=message: self.on_message(m), 0)
 
+    async def _reset_agent(self):
+        """Disconnect and reconnect the agent to clear conversation context."""
+        try:
+            # Disconnect current session
+            await self.agent.disconnect()
+            LOG.info("Agent disconnected for reset")
+
+            # Reconnect to start fresh session
+            await self.agent.connect()
+            LOG.info("Agent reconnected with fresh session")
+
+            # Notify UI that reset is complete
+            sublime.set_timeout(lambda: self.on_message(("reset_complete", "Session reset successfully")), 0)
+        except Exception as e:
+            LOG.error(f"Error resetting agent: {e}")
+            sublime.set_timeout(lambda: self.on_message(("error", f"Failed to reset session: {str(e)}")), 0)
+
     def send(self, text):
         """Queue input to be sent."""
         if self.loop and self.input_queue:
@@ -194,6 +211,12 @@ class AgentThread(threading.Thread):
     def stop(self):
         """Signal thread to stop."""
         self.running = False
+
+    def reset(self):
+        """Reset the agent session by disconnecting and reconnecting."""
+        if self.loop and self.agent:
+            # Schedule the reset in the agent's event loop
+            asyncio.run_coroutine_threadsafe(self._reset_agent(), self.loop)
 
 
 class ChatSession:
@@ -237,6 +260,12 @@ class ChatSession:
             self.stop_loading()
             return
 
+        # Check for reset_complete message
+        if isinstance(message, tuple) and message[0] == "reset_complete":
+            sublime.status_message(message[1])
+            LOG.info("Session reset completed successfully")
+            return
+
         # Handle Claude Agent Message objects
         if hasattr(message, "type"):
             if message.type == "assistant":
@@ -251,6 +280,11 @@ class ChatSession:
 
                 if text_content:
                     self.on_chat_content(text_content)
+            if message.type == "system":
+                if hasattr(message, "content") and isinstance(message.content, dict):
+                    session_id = message.content.get("session_id")
+                    if session_id and message.content.get("subtype") == "init":
+                        LOG.info(f"system session_id: {session_id}")
 
             elif message.type == "error":
                 self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message.content}\n"})
@@ -259,6 +293,7 @@ class ChatSession:
             elif message.type == "result":
                 # Stop loading on turn completion (heuristic)
                 self.stop_loading()
+                self.on_chat_content("\n")
 
     def stop_loading(self):
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
@@ -279,6 +314,22 @@ class ChatSession:
     def send_input(self, user_input):
         """Start animation and send to agent."""
         self.agent_thread.send(user_input)
+
+    def reset_session(self):
+        """Reset the chat session by restarting the agent and notifying in UI."""
+        # Stop any ongoing loading animation
+        self.stop_loading()
+
+        # Show reset message in the history
+        reset_msg = "\n\nChatView session reset...\n"
+        self.chat_view.run_command("chat_output_append", {"text": reset_msg})
+
+        cwd = get_best_dir(self.chat_view)
+        if cwd:
+            self.chat_view.run_command("chat_output_append", {"text": f"cwd: {cwd}\n\n"})
+
+        # Reset the agent (disconnect and reconnect)
+        self.agent_thread.reset()
 
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
@@ -758,3 +809,25 @@ class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_visible(self, files=[], dirs=[]):
         # Show only if at least one item is selected
         return bool(files or dirs)
+
+
+class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
+    """
+    Clears the current chat session by disconnecting and reconnecting the agent.
+    This resets the conversation history similar to Claude Code's reset session.
+    """
+    def run(self):
+        window_id = self.window.id()
+        if window_id not in chatview_clients:
+            sublime.status_message("No active ChatView session found")
+            return
+
+        # Reset the session (disconnect and reconnect agent)
+        session = chatview_clients[window_id]
+        session.reset_session()
+        sublime.status_message("Resetting chat session...")
+        LOG.info("Resetting chat session via disconnect/reconnect")
+
+    def is_enabled(self):
+        # Only enable if there's an active session
+        return self.window.id() in chatview_clients
