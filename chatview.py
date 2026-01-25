@@ -356,10 +356,14 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set("word_wrap", True)
         chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
+        shortcut = "Command+Enter" if sublime.platform() == "osx" else "Control+Enter"
+        welcome_text = "Type your message and press %s to send.\n\n" % shortcut
+
         chat_view.run_command("append", {"characters": "Starting ChatView CLI session...\n"})
         cwd = get_best_dir(chat_view)
         if cwd:
             chat_view.run_command("append", {"characters": f"cwd: {cwd}\n"})
+        chat_view.run_command("append", {"characters": welcome_text})
 
         # Set input start position
         chat_view.settings().set(CHAT_INPUT_START, chat_view.size())
