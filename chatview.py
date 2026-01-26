@@ -15,6 +15,7 @@ LOG = logging.getLogger(__package__)
 CHAT_VIEW_FLAG = "chatview_chat"
 CHAT_INPUT_START = "chatview_input_start"
 CHAT_WORKSPACE = "chatview_active_workspace"
+CHAT_MODEL = "chatview_model"
 CHAT_VIEW_NAME = "Chat View"
 PROMPT_PREFIX = "\n❯ "
 chatview_clients = {}
@@ -140,7 +141,8 @@ class AgentThread(threading.Thread):
             cli_path=self.cli_path,
             api_key=self.anthropic_config.get("ANTHROPIC_API_KEY"),
             base_url=self.anthropic_config.get("ANTHROPIC_BASE_URL"),
-            auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN")
+            auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN"),
+            model=self.anthropic_config.get("model")
         )
 
         try:
@@ -238,6 +240,7 @@ class ChatSession:
             "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
             "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
             "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
+            "model": self.window.settings().get(CHAT_MODEL)
         }
 
         # Initialize background agent thread
@@ -835,3 +838,30 @@ class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         # Only enable if there's an active session
         return self.window.id() in chatview_clients
+
+
+class ChatViewSetModelInputHandler(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "model"
+
+    def placeholder(self):
+        return "Select a model(sonnet, opus, haiku)"
+
+    def description(self, text):
+        return "Set Model: " + text if text else "Set Model Name"
+
+    def validate(self, text):
+        return bool(text.strip())
+
+
+class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
+    """
+    Sets the model for ChatView sessions in the current window.
+    """
+    def run(self, model):
+        if model:
+            self.window.settings().set(CHAT_MODEL, model.strip())
+            sublime.status_message(f"ChatView model set to: {model}")
+
+    def input(self, args):
+        return ChatViewSetModelInputHandler()
