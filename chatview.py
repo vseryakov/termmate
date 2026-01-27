@@ -230,6 +230,9 @@ class ChatSession:
         self.window = window
         self.chat_view = view
         self.loading_animation = LoadingAnimation(self.chat_view)
+        self.history = []
+        self.history_index = 0
+        self.history_stash = ""
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -415,8 +418,99 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         self.view.run_command("chat_input_prompt", {"text": ""})
 
         # Send to session
-        chatview_clients[window_id].send_input(user_input)
+        session = chatview_clients[window_id]
+        session.history.append(user_input)
+        session.history_index = len(session.history)
+        session.history_stash = ""
+        session.send_input(user_input)
         LOG.info(f"User enter prompt {user_input}")
+
+
+class ChatViewHistoryUpCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        window = self.view.window()
+        if not window or window.id() not in chatview_clients:
+            return
+
+        session = chatview_clients[window.id()]
+
+        # Check if cursor is at top of input area
+        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
+        editable_start = input_start + len(PROMPT_PREFIX)
+
+        # Get first selection
+        if len(self.view.sel()) == 0:
+            return
+        sel = self.view.sel()[0]
+
+        # If selection is not empty or not at the first line of input, move up normally
+        row_sel, _ = self.view.rowcol(sel.begin())
+        row_start, _ = self.view.rowcol(editable_start)
+
+        if row_sel > row_start or not sel.empty():
+            self.view.run_command("move", {"by": "lines", "forward": False})
+            return
+
+        # History navigation
+        if session.history_index == len(session.history):
+            # Stash current input
+            current_input_region = sublime.Region(editable_start, self.view.size())
+            session.history_stash = self.view.substr(current_input_region)
+
+        if session.history_index > 0:
+            session.history_index -= 1
+            self._replace_input(edit, session.history[session.history_index], editable_start)
+
+    def _replace_input(self, edit, text, start_point):
+        region = sublime.Region(start_point, self.view.size())
+        self.view.replace(edit, region, text)
+        self.view.sel().clear()
+        self.view.sel().add(sublime.Region(self.view.size()))
+        self.view.show(self.view.size())
+
+
+class ChatViewHistoryDownCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        window = self.view.window()
+        if not window or window.id() not in chatview_clients:
+            return
+
+        session = chatview_clients[window.id()]
+
+        # Check if cursor is at bottom of input area
+        # Simply check if the next line is beyond the file end
+        if len(self.view.sel()) == 0:
+            return
+        sel = self.view.sel()[0]
+
+        row_sel, _ = self.view.rowcol(sel.end())
+        row_last, _ = self.view.rowcol(self.view.size())
+
+        # If not at last line, move down normally
+        if row_sel < row_last or not sel.empty():
+            self.view.run_command("move", {"by": "lines", "forward": True})
+            return
+
+        # History navigation
+        if session.history_index < len(session.history):
+            session.history_index += 1
+
+            text_to_show = ""
+            if session.history_index == len(session.history):
+                text_to_show = session.history_stash
+            else:
+                text_to_show = session.history[session.history_index]
+
+            input_start = self.view.settings().get(CHAT_INPUT_START, 0)
+            editable_start = input_start + len(PROMPT_PREFIX)
+            self._replace_input(edit, text_to_show, editable_start)
+
+    def _replace_input(self, edit, text, start_point):
+        region = sublime.Region(start_point, self.view.size())
+        self.view.replace(edit, region, text)
+        self.view.sel().clear()
+        self.view.sel().add(sublime.Region(self.view.size()))
+        self.view.show(self.view.size())
 
 
 class ChatViewListener(sublime_plugin.EventListener):
