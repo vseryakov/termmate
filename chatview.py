@@ -3,6 +3,7 @@ import os
 
 import asyncio
 import threading
+import xml
 import sublime
 import sublime_plugin
 
@@ -283,11 +284,18 @@ class ChatSession:
 
                 if text_content:
                     self.on_chat_content(text_content)
-            if message.type == "system":
+            elif message.type == "system":
                 if hasattr(message, "content") and isinstance(message.content, dict):
                     session_id = message.content.get("session_id")
                     if session_id and message.content.get("subtype") == "init":
                         LOG.info(f"system session_id: {session_id}")
+
+            elif message.type == "user":
+                if (isinstance(message.content["content"], str) and
+                    message.content["content"].startswith("<local-command-stdout>")):
+                    local_output = xml.etree.ElementTree.fromstring(message.content["content"])
+                    # local_output.tag is 'local-command-stdout'
+                    self.on_chat_content(local_output.text)
 
             elif message.type == "error":
                 self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message.content}\n"})
