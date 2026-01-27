@@ -28,21 +28,5 @@
         [
             { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
         ]
-    },
-    {
-        "keys": ["up"],
-        "command": "chat_view_history_up",
-        "context":
-        [
-            { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
-        ]
-    },
-    {
-        "keys": ["down"],
-        "command": "chat_view_history_down",
-        "context":
-        [
-            { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
-        ]
     }
 ]

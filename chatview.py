@@ -433,23 +433,8 @@ class ChatViewHistoryUpCommand(sublime_plugin.TextCommand):
             return
 
         session = chatview_clients[window.id()]
-
-        # Check if cursor is at top of input area
         input_start = self.view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
-
-        # Get first selection
-        if len(self.view.sel()) == 0:
-            return
-        sel = self.view.sel()[0]
-
-        # If selection is not empty or not at the first line of input, move up normally
-        row_sel, _ = self.view.rowcol(sel.begin())
-        row_start, _ = self.view.rowcol(editable_start)
-
-        if row_sel > row_start or not sel.empty():
-            self.view.run_command("move", {"by": "lines", "forward": False})
-            return
 
         # History navigation
         if session.history_index == len(session.history):
@@ -476,20 +461,6 @@ class ChatViewHistoryDownCommand(sublime_plugin.TextCommand):
             return
 
         session = chatview_clients[window.id()]
-
-        # Check if cursor is at bottom of input area
-        # Simply check if the next line is beyond the file end
-        if len(self.view.sel()) == 0:
-            return
-        sel = self.view.sel()[0]
-
-        row_sel, _ = self.view.rowcol(sel.end())
-        row_last, _ = self.view.rowcol(self.view.size())
-
-        # If not at last line, move down normally
-        if row_sel < row_last or not sel.empty():
-            self.view.run_command("move", {"by": "lines", "forward": True})
-            return
 
         # History navigation
         if session.history_index < len(session.history):
@@ -578,6 +549,23 @@ class ChatViewListener(sublime_plugin.EventListener):
 
         input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)
+
+        # Handle move commands for history navigation
+        if command_name == "move" and args and args.get("by") == "lines":
+            is_up = not args.get("forward", True)
+            if len(view.sel()) > 0:
+                sel = view.sel()[0]
+                if sel.empty():
+                    if is_up:
+                        row_sel, _ = view.rowcol(sel.begin())
+                        row_start, _ = view.rowcol(editable_start)
+                        if row_sel == row_start:
+                            return ("chat_view_history_up", {})
+                    else:
+                        row_sel, _ = view.rowcol(sel.end())
+                        row_last, _ = view.rowcol(view.size())
+                        if row_sel == row_last:
+                            return ("chat_view_history_down", {})
 
         # Handle deletion commands - block if they affect content before prompt
         delete_commands = ("left_delete", "right_delete", "delete_word", "delete_word_backward",
