@@ -52,6 +52,24 @@ class TextBlock:
         return f"TextBlock(text={self.text[:50]}...)"
 
 
+class PermissionResultAllow:
+    """Result indicating permission is granted"""
+    def __init__(self, updated_input: Optional[Dict[str, Any]] = None):
+        self.updated_input = updated_input
+
+
+class PermissionResultDeny:
+    """Result indicating permission is denied"""
+    def __init__(self, message: str = "Permission denied"):
+        self.message = message
+
+
+class ToolPermissionContext:
+    """Context for tool permission requests"""
+    def __init__(self, suggestions: Optional[List[Dict[str, Any]]] = None):
+        self.suggestions = suggestions or []
+
+
 class AssistantMessage:
     """Represents an assistant message with content blocks"""
 
@@ -79,7 +97,8 @@ class ClaudeAgentOptions:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        auth_token: Optional[str] = None
+        auth_token: Optional[str] = None,
+        can_use_tool: Optional[Callable] = None
     ):
         self.cwd = cwd or os.getcwd()
         self.cli_path = cli_path
@@ -91,6 +110,7 @@ class ClaudeAgentOptions:
         self.api_key = api_key
         self.base_url = base_url
         self.auth_token = auth_token
+        self.can_use_tool = can_use_tool
 
 
 class ClaudeCodeAgent:
@@ -115,6 +135,7 @@ class ClaudeCodeAgent:
         self._read_task: Optional[asyncio.Task] = None
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._session_id: Optional[str] = None
+        self._permission_callback = self.options.can_use_tool
 
         # Find claude executable
         self.cli_path = self.options.cli_path or shutil.which("claude")
@@ -140,13 +161,15 @@ class ClaudeCodeAgent:
         # --input-format=stream-json: Accept JSON input stream
         # --replay-user-messages: Echo user messages for acknowledgment
         # --verbose: Required when using stream-json output format
+        # --permission-prompt-tool: Enable permission prompts for tool usage
         cmd = [
             self.cli_path,
             "--print",
             "--output-format=stream-json",
             "--input-format=stream-json",
             "--replay-user-messages",
-            "--verbose"
+            "--verbose",
+            "--permission-prompt-tool=stdio",
         ]
 
         # Add permission mode if specified
@@ -189,6 +212,9 @@ class ClaudeCodeAgent:
         # Start background task to read messages
         self._read_task = asyncio.create_task(self._read_messages())
         self._stderr_task = asyncio.create_task(self._read_stderr())
+
+        # Send initialization control_request
+        await self._send_initialize_request()
 
         # Send initial prompt if provided
         if prompt:
@@ -233,6 +259,96 @@ class ClaudeCodeAgent:
         self.process.stdin.write(json_line.encode("utf-8"))
         await self.process.stdin.drain()
 
+    async def _send_initialize_request(self) -> None:
+        """Send initialization control_request to Claude CLI"""
+        import uuid
+        request_id = f"req_init_{uuid.uuid4().hex[:8]}"
+
+        init_request = {
+            "type": "control_request",
+            "request_id": request_id,
+            "request": {
+                "subtype": "initialize",
+                "hooks": None
+            }
+        }
+
+        await self._write_json(init_request)
+        LOG.debug(f"Sent initialization control_request: {request_id}")
+
+    async def _handle_permission_request(self, data: Dict[str, Any]) -> None:
+        """Handle permission request from Claude CLI"""
+        request_id = data.get("request_id")
+        request = data.get("request", {})
+        tool_name = request.get("tool_name")
+        input_data = request.get("input", {})
+        suggestions = request.get("permission_suggestions", [])
+
+        # Create context
+        context = ToolPermissionContext(suggestions=suggestions)
+
+        try:
+            # Call the permission callback
+            result = await self._permission_callback(tool_name, input_data, context)
+
+            response_data = {}
+            # Send response based on result
+            if isinstance(result, PermissionResultAllow):
+                response_data = {
+                    "behavior": "allow",
+                    "updatedInput": result.updated_input if result.updated_input is not None else input_data
+                }
+            elif isinstance(result, PermissionResultDeny):
+                response_data = {
+                    "behavior": "deny",
+                    "message": result.message
+                }
+
+            await self._send_control_response(
+                request_id=request_id,
+                response_data=response_data
+            )
+        except Exception as e:
+            LOG.error(f"Error in permission callback: {e}")
+            # Default to deny on error
+            await self._send_control_error(
+                request_id=request_id,
+                error=f"Permission callback error: {str(e)}"
+            )
+
+    async def _send_control_response(
+        self,
+        request_id: str,
+        response_data: Dict[str, Any]
+    ) -> None:
+        """Send a success control response to Claude CLI"""
+        response = {
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": request_id,
+                "response": response_data
+            }
+        }
+        await self._write_json(response)
+
+    async def _send_control_error(
+        self,
+        request_id: str,
+        error: str
+    ) -> None:
+        """Send an error control response to Claude CLI"""
+        response = {
+            "type": "control_response",
+            "response": {
+                "subtype": "error",
+                "request_id": request_id,
+                "error": error
+            }
+        }
+        await self._write_json(response)
+
+
     async def _read_messages(self) -> None:
         """Background task to continuously read messages from Claude CLI"""
         if not self.process or not self.process.stdout:
@@ -255,7 +371,7 @@ class ClaudeCodeAgent:
                     await self._message_queue.put(message)
                 except json.JSONDecodeError as e:
                     # Handle non-JSON output (e.g., debug logs)
-                    pass
+                    LOG.error(f"claude non-json msg: {line_str}")
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -276,7 +392,7 @@ class ClaudeCodeAgent:
                 line_str = line.decode("utf-8").strip()
                 if line_str:
                     # Optionally log stderr to a file or ignore
-                    pass
+                    LOG.error(f"claude stderr: {line_str}")
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -290,6 +406,18 @@ class ClaudeCodeAgent:
         # Handle system init message - extract session_id
         if msg_type == "system" and data.get("subtype") == "init":
             self._session_id = data.get("session_id")
+            return Message(msg_type, content=data, msg_id=msg_id)
+
+        # Handle control_request message for permission callbacks
+        if msg_type == "control_request":
+            request_id = data.get("request_id")
+            request = data.get("request", {})
+            subtype = request.get("subtype")
+
+            if subtype == "can_use_tool" and self._permission_callback:
+                # Schedule permission callback handling
+                asyncio.create_task(self._handle_permission_request(data))
+
             return Message(msg_type, content=data, msg_id=msg_id)
 
         # Handle assistant message from Claude CLI stream-json format

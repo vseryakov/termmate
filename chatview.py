@@ -8,7 +8,9 @@ import sublime
 import sublime_plugin
 
 from . import plugin
-from .genfoundry.claude_agent import ClaudeCodeAgent, ClaudeAgentOptions, AssistantMessage, TextBlock
+from .genfoundry.claude_agent import (
+    ClaudeCodeAgent, ClaudeAgentOptions, AssistantMessage, TextBlock,
+    PermissionResultAllow, PermissionResultDeny)
 
 # logger by package name
 LOG = logging.getLogger(__package__)
@@ -143,7 +145,8 @@ class AgentThread(threading.Thread):
             api_key=self.anthropic_config.get("ANTHROPIC_API_KEY"),
             base_url=self.anthropic_config.get("ANTHROPIC_BASE_URL"),
             auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN"),
-            model=self.anthropic_config.get("model")
+            model=self.anthropic_config.get("model"),
+            can_use_tool=getattr(self, 'agent_options_callback', None)
         )
 
         try:
@@ -233,6 +236,8 @@ class ChatSession:
         self.history = []
         self.history_index = 0
         self.history_stash = ""
+        self.permission_futures = {} # Map of request_id -> Future
+        self.permission_phantoms = {} # Map of request_id -> PhantomSet
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -249,11 +254,133 @@ class ChatSession:
 
         # Initialize background agent thread
         self.agent_thread = AgentThread(cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config)
+        self.agent_thread.agent_options_callback = self.permission_callback # Inject callback
         self.agent_thread.start()
+
+    async def permission_callback(self, tool_name, input_data, context):
+        """Callback for tool permission requests from the agent."""
+        # Create a future in the agent's loop
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        request_id = str(id(future))
+
+        # Store the future
+        self.permission_futures[request_id] = future
+
+        # Schedule UI update on main thread
+        sublime.set_timeout(lambda: self.show_permission_phantom(request_id, tool_name, input_data), 0)
+
+        # Wait for result
+        try:
+            result = await future
+            return result
+        finally:
+            # Cleanup
+            if request_id in self.permission_futures:
+                del self.permission_futures[request_id]
+            sublime.set_timeout(lambda: self.clear_permission_phantom(request_id), 0)
+
+
+    def show_permission_phantom(self, request_id, tool_name, input_data):
+        """Show a phantom asking for permission."""
+        input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
+        region = sublime.Region(input_start, input_start)
+
+        phantom_set = sublime.PhantomSet(self.chat_view, f"permission_{request_id}")
+        self.permission_phantoms[request_id] = phantom_set
+
+        # Resolve request_id for the callback
+        def on_navigate(action):
+            self.handle_permission_action(request_id, action)
+
+        # Format input data efficiently
+        import json
+        input_str = json.dumps(input_data, indent=2)
+
+        html = f"""
+        <body id="permission-{request_id}">
+            <style>
+                .permission-box {{
+                    background-color: color(var(--background) blend(var(--foreground) 95%));
+                    padding: 10px;
+                    border: 1px solid var(--accent);
+                    border-radius: 4px;
+                    margin: 10px 0;
+                }}
+                .header {{
+                    font-weight: bold;
+                    color: var(--accent);
+                    margin-bottom: 5px;
+                }}
+                .content {{
+                    font-family: var(--font-mono);
+                    font-size: 0.9em;
+                    white-space: pre-wrap;
+                    margin-bottom: 10px;
+                }}
+                .actions {{
+                    display: block;
+                }}
+                .btn {{
+                    text-decoration: none;
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                }}
+                .btn-allow {{
+                    background-color: var(--greenish);
+                    color: var(--background);
+                }}
+                .btn-deny {{
+                    background-color: var(--redish);
+                    color: var(--background);
+                    margin-left: 10px;
+                }}
+            </style>
+            <div class="permission-box">
+                <div class="header">⚠️ Tool Permission Request: {tool_name}</div>
+                <div class="content">{input_str}</div>
+                <div class="actions">
+                    <a href="allow" class="btn btn-allow">ALLOW</a>
+                    <a href="deny" class="btn btn-deny">DENY</a>
+                </div>
+            </div>
+        </body>
+        """
+
+        phantom_set.update([sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, on_navigate)])
+
+        # Scroll to bottom to show request
+        self.chat_view.show(self.chat_view.size())
+
+    def clear_permission_phantom(self, request_id):
+        """Remove the permission phantom."""
+        if request_id in self.permission_phantoms:
+            self.permission_phantoms[request_id].update([])
+            del self.permission_phantoms[request_id]
+
+    def handle_permission_action(self, request_id, action):
+        """Handle allow/deny action from UI."""
+        LOG.info(f"Permission action: {action} for request {request_id}")
+        if request_id in self.permission_futures:
+            future = self.permission_futures[request_id]
+            if not future.done():
+                # Get the result based on action
+                if action == "allow":
+                    result = PermissionResultAllow()
+                else:
+                    result = PermissionResultDeny(message="User denied permission via UI")
+
+                # Set the result in the agent's loop
+                if self.agent_thread and self.agent_thread.loop:
+                    self.agent_thread.loop.call_soon_threadsafe(future.set_result, result)
+
+
 
     def _handle_agent_message(self, message):
         """Handle messages received from the agent thread."""
-        LOG.info(f"agent message {message}")
+
+        # LOG.info(f"agent message {message}")
         # Handle error strings passed from thread wrapper
         if message == "error":
             # The actual error message is passed as second arg in the thread,
@@ -371,7 +498,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
         shortcut = "Command+Enter" if sublime.platform() == "osx" else "Control+Enter"
-        welcome_text = "Type your message and press %s to send.\n\n" % shortcut
+        welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
 
         chat_view.run_command("append", {"characters": "Starting ChatView CLI session...\n"})
         cwd = get_best_dir(chat_view)
@@ -955,3 +1082,15 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         return ChatViewSetModelInputHandler()
+
+
+class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
+    """
+    Handle permission actions from the phantom UI.
+    """
+    def run(self, action, request_id):
+        window_id = self.window.id()
+        if window_id in chatview_clients:
+            session = chatview_clients[window_id]
+            session.handle_permission_action(request_id, action)
+
