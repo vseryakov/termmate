@@ -296,7 +296,8 @@ class ClaudeCodeAgent:
             if isinstance(result, PermissionResultAllow):
                 response_data = {
                     "behavior": "allow",
-                    "updatedInput": result.updated_input if result.updated_input is not None else input_data
+                    "updatedInput": (result.updated_input if result.updated_input is not None
+                        else input_data),
                 }
             elif isinstance(result, PermissionResultDeny):
                 response_data = {
@@ -375,6 +376,7 @@ class ClaudeCodeAgent:
         except asyncio.CancelledError:
             pass
         except Exception as e:
+            LOG.error(f"Reading messages error: {e}")
             error_msg = Message("error", content=str(e))
             await self._message_queue.put(error_msg)
 

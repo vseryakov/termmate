@@ -203,10 +203,14 @@ class AgentThread(threading.Thread):
             LOG.info("Agent reconnected with fresh session")
 
             # Notify UI that reset is complete
-            sublime.set_timeout(lambda: self.on_message(("reset_complete", "Session reset successfully")), 0)
+            sublime.set_timeout(
+                lambda: self.on_message(("reset_complete", "Session reset successfully")), 0
+            )
         except Exception as e:
             LOG.error(f"Error resetting agent: {e}")
-            sublime.set_timeout(lambda: self.on_message(("error", f"Failed to reset session: {str(e)}")), 0)
+            sublime.set_timeout(
+                lambda: self.on_message(("error", f"Failed to reset session: {str(e)}")), 0
+            )
 
     def send(self, text):
         """Queue input to be sent."""
@@ -238,6 +242,7 @@ class ChatSession:
         self.history_stash = ""
         self.permission_futures = {} # Map of request_id -> Future
         self.permission_phantoms = {} # Map of request_id -> PhantomSet
+        self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -253,7 +258,9 @@ class ChatSession:
         }
 
         # Initialize background agent thread
-        self.agent_thread = AgentThread(cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config)
+        self.agent_thread = AgentThread(
+            cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
+        )
         self.agent_thread.agent_options_callback = self.permission_callback # Inject callback
         self.agent_thread.start()
 
@@ -268,7 +275,9 @@ class ChatSession:
         self.permission_futures[request_id] = future
 
         # Schedule UI update on main thread
-        sublime.set_timeout(lambda: self.show_permission_phantom(request_id, tool_name, input_data), 0)
+        sublime.set_timeout(
+            lambda: self.show_permission_phantom(request_id, tool_name, input_data), 0
+        )
 
         # Wait for result
         try:
@@ -278,6 +287,8 @@ class ChatSession:
             # Cleanup
             if request_id in self.permission_futures:
                 del self.permission_futures[request_id]
+            if request_id in self.permission_diff_data:
+                del self.permission_diff_data[request_id]
             sublime.set_timeout(lambda: self.clear_permission_phantom(request_id), 0)
 
 
@@ -293,9 +304,37 @@ class ChatSession:
         def on_navigate(action):
             self.handle_permission_action(request_id, action)
 
-        # Format input data efficiently
-        import json
-        input_str = json.dumps(input_data, indent=2)
+        # Detect Write/Edit tools and store diff data
+        has_diff = False
+        if tool_name == "Edit":
+            old_text = input_data.get("old_string", "")
+            new_text = input_data.get("new_string", "")
+            file_path = input_data.get("file_path", "unknown")
+            name = os.path.basename(file_path)
+            self.permission_diff_data[request_id] = (old_text, new_text, name)
+            has_diff = True
+        elif tool_name == "Write":
+            file_path = input_data.get("file_path", "")
+            new_text = input_data.get("content", "")
+            old_text = ""
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        old_text = f.read()
+                except Exception as e:
+                    LOG.error(f"Failed to read file for diff: {e}")
+            name = os.path.basename(file_path) if file_path else "new_file"
+            self.permission_diff_data[request_id] = (old_text, new_text, name)
+            has_diff = True
+
+        # Prepare display content
+        if has_diff:
+            display_content = f'<a href="show_diff" class="file-link">📄 {name}</a>'
+        else:
+            # Format input data efficiently
+            import json
+            input_str = json.dumps(input_data, indent=2)
+            display_content = input_str
 
         html = f"""
         <body id="permission-{request_id}">
@@ -318,6 +357,12 @@ class ChatSession:
                     white-space: pre-wrap;
                     margin-bottom: 10px;
                 }}
+                .file-link {{
+                    text-decoration: none;
+                    color: var(--accent);
+                    font-weight: bold;
+                    font-size: 1.1em;
+                }}
                 .actions {{
                     display: block;
                 }}
@@ -336,10 +381,15 @@ class ChatSession:
                     color: var(--background);
                     margin-left: 10px;
                 }}
+                .btn-diff {{
+                    background-color: var(--accent);
+                    color: var(--background);
+                    margin-left: 10px;
+                }}
             </style>
             <div class="permission-box">
                 <div class="header">⚠️ Tool Permission Request: {tool_name}</div>
-                <div class="content">{input_str}</div>
+                <div class="content">{display_content}</div>
                 <div class="actions">
                     <a href="allow" class="btn btn-allow">ALLOW</a>
                     <a href="deny" class="btn btn-deny">DENY</a>
@@ -362,6 +412,13 @@ class ChatSession:
     def handle_permission_action(self, request_id, action):
         """Handle allow/deny action from UI."""
         LOG.info(f"Permission action: {action} for request {request_id}")
+
+        if action == "show_diff":
+            if request_id in self.permission_diff_data:
+                old_text, new_text, name = self.permission_diff_data[request_id]
+                plugin.show_diff(self.window, old_text, new_text, name)
+            return
+
         if request_id in self.permission_futures:
             future = self.permission_futures[request_id]
             if not future.done():
@@ -385,7 +442,8 @@ class ChatSession:
         if message == "error":
             # The actual error message is passed as second arg in the thread,
             # but here we might receive the raw tuple or just be careful.
-            # actually my AgentThread passes ("error", str(e)) but let's fix that signature in AgentThread
+            # actually my AgentThread passes ("error", str(e))
+            # but let's fix that signature in AgentThread
             pass
 
         # Check for error tuple/custom protocol from AgentThread
@@ -428,7 +486,9 @@ class ChatSession:
                     self.on_chat_content(local_output.text)
 
             elif message.type == "error":
-                self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message.content}\n"})
+                self.chat_view.run_command(
+                    "chat_output_append", {"text": f"\n\nError: {message.content}\n"}
+                )
                 self.stop_loading()
 
             elif message.type == "result":
@@ -440,7 +500,9 @@ class ChatSession:
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
 
     def on_chat_content(self, text):
-        sublime.set_timeout(lambda: self.chat_view.run_command("chat_output_append", {"text": text}), 0)
+        sublime.set_timeout(
+            lambda: self.chat_view.run_command("chat_output_append", {"text": text}), 0
+        )
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
