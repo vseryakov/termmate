@@ -329,7 +329,7 @@ class ChatSession:
 
         # Prepare display content
         if has_diff:
-            display_content = f'<a href="show_diff" class="file-link">📄 {name}</a>'
+            display_content = f'📄 <a href="show_diff" class="file-link">{name}</a>'
         else:
             # Format input data efficiently
             import json
@@ -355,16 +355,20 @@ class ChatSession:
                     font-family: var(--font-mono);
                     font-size: 0.9em;
                     white-space: pre-wrap;
-                    margin-bottom: 10px;
+                    margin-bottom: 20px;
                 }}
                 .file-link {{
                     text-decoration: none;
                     color: var(--accent);
                     font-weight: bold;
                     font-size: 1.1em;
+                    background-color: color(var(--background) blend(var(--foreground) 85%));
+                    padding: 2px 6px;
+                    border-radius: 3px;
                 }}
                 .actions {{
                     display: block;
+                    margin-top: 10px;
                 }}
                 .btn {{
                     text-decoration: none;
@@ -388,11 +392,11 @@ class ChatSession:
                 }}
             </style>
             <div class="permission-box">
-                <div class="header">⚠️ Tool Permission Request: {tool_name}</div>
+                <div class="header">Tool Permission Request: {tool_name}</div>
                 <div class="content">{display_content}</div>
                 <div class="actions">
-                    <a href="allow" class="btn btn-allow">ALLOW</a>
-                    <a href="deny" class="btn btn-deny">DENY</a>
+                    <a href="allow" class="btn btn-allow">Allow</a>
+                    <a href="deny" class="btn btn-deny">Deny</a>
                 </div>
             </div>
         </body>
