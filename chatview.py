@@ -962,19 +962,17 @@ class ChatViewAddContextCommand(sublime_plugin.TextCommand):
         if not file_path:
             return
 
-        file_name = os.path.basename(file_path)
-
         # Get line numbers (1-based)
         sel = view.sel()[0]
         row_start, _ = view.rowcol(sel.begin())
         row_end, _ = view.rowcol(sel.end())
 
-        # Format as @file_name#L(A)-(B)
+        # Format as @file_path#L(A)-(B)
         # Handle single line selection vs range
         if row_start == row_end:
-            context_tag = f"@{file_name}#L{row_start + 1}"
+            context_tag = f"@{file_path}#L{row_start + 1}"
         else:
-            context_tag = f"@{file_name}#L{row_start + 1}-{row_end + 1}"
+            context_tag = f"@{file_path}#L{row_start + 1}-{row_end + 1}"
 
         # Find or create ChatView chat view
         chat_view = None
