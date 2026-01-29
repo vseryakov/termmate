@@ -331,10 +331,12 @@ class ChatSession:
         if has_diff:
             display_content = f'📄 <a href="show_diff" class="file-link">{name}</a>'
         else:
-            # Format input data efficiently
-            import json
-            input_str = json.dumps(input_data, indent=2)
-            display_content = input_str
+            # Format input data line by line
+            display_lines = []
+            for k, v in input_data.items():
+                if isinstance(v, str):
+                    display_lines.append(f"{k}: {v}")
+            display_content = "\n".join(display_lines)
 
         html = f"""
         <body id="permission-{request_id}">
@@ -475,7 +477,7 @@ class ChatSession:
                             text_content += block.text
 
                 if text_content:
-                    self.on_chat_content(text_content)
+                    self.on_chat_content(text_content + "\n")
             elif message.type == "system":
                 if hasattr(message, "content") and isinstance(message.content, dict):
                     session_id = message.content.get("session_id")
