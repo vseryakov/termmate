@@ -1,11 +1,6 @@
 [
     {
-        "keys": ["ctrl+alt+g"],
-        "command": "chat_view_cli",
-        "args": {}
-    },
-    {
-        "keys": ["super+alt+g"],
+        "keys": ["primary+alt+g"],
         "command": "chat_view_cli",
         "args": {},
         "context":
@@ -14,15 +9,7 @@
         ]
     },
     {
-        "keys": ["ctrl+enter"],
-        "command": "chat_view_send_input",
-        "context":
-        [
-            { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
-        ]
-    },
-    {
-        "keys": ["super+enter"],
+        "keys": ["primary+enter"],
         "command": "chat_view_send_input",
         "context":
         [

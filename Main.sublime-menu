@@ -26,8 +26,8 @@
                             {
                                 "command": "edit_settings",
                                 "args": {
-                                    "base_file": "${packages}/ChatView/ChatView.sublime-keymap",
-                                    "default": "[\n\t{ \"keys\": [\"ctrl+alt+g\"], \"command\": \"chat_view_cli\" }\n]\n"
+                                    "base_file": "${packages}/ChatView/Default.sublime-keymap",
+                                    "default": "[\n\t{ \"keys\": [\"primary+alt+g\"], \"command\": \"chat_view_cli\" }\n]\n"
                                 },
                                 "caption": "Key Bindings"
                             }
