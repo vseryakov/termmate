@@ -354,25 +354,36 @@ class ClaudeCodeAgent:
         """Background task to continuously read messages from Claude CLI"""
         if not self.process or not self.process.stdout:
             return
+        chunk_limit = 65536
+        buffer = b""
 
         try:
             while self.is_connected:
-                line = await self.process.stdout.readline()
-                if not line:
+                # Read chunks instead of lines to avoid buffer limits
+                try:
+                    chunk = await self.process.stdout.read(chunk_limit)
+                except Exception:
                     break
 
-                line_str = line.decode("utf-8").strip()
-                if not line_str:
-                    continue
+                if not chunk:
+                    break
 
-                try:
-                    data = json.loads(line_str)
-                    LOG.debug(f"claude msg: {data}")
-                    message = self._parse_message(data)
-                    await self._message_queue.put(message)
-                except json.JSONDecodeError as e:
-                    # Handle non-JSON output (e.g., debug logs)
-                    LOG.error(f"claude non-json msg: {line_str}")
+                buffer += chunk
+
+                # Process lines from buffer
+                while b"\n" in buffer:
+                    line_bytes, buffer = buffer.split(b"\n", 1)
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+
+                    try:
+                        data = json.loads(line)
+                        LOG.debug(f"claude msg: {data}")
+                        message = self._parse_message(data)
+                        await self._message_queue.put(message)
+                    except json.JSONDecodeError:
+                        LOG.error(f"claude non-json msg: {line[:200]}...")
         except asyncio.CancelledError:
             pass
         except Exception as e:
