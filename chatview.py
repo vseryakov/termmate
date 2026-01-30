@@ -240,8 +240,8 @@ class ChatSession:
         self.history = []
         self.history_index = 0
         self.history_stash = ""
-        self.permission_futures = {} # Map of request_id -> Future
         self.permission_phantoms = {} # Map of request_id -> PhantomSet
+        self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
 
         # Load cli_path from settings
@@ -261,36 +261,7 @@ class ChatSession:
         self.agent_thread = AgentThread(
             cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
         )
-        self.agent_thread.agent_options_callback = self.permission_callback # Inject callback
         self.agent_thread.start()
-
-    async def permission_callback(self, tool_name, input_data, context):
-        """Callback for tool permission requests from the agent."""
-        # Create a future in the agent's loop
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-        request_id = str(id(future))
-
-        # Store the future
-        self.permission_futures[request_id] = future
-
-        # Schedule UI update on main thread
-        sublime.set_timeout(
-            lambda: self.show_permission_phantom(request_id, tool_name, input_data), 0
-        )
-
-        # Wait for result
-        try:
-            result = await future
-            return result
-        finally:
-            # Cleanup
-            if request_id in self.permission_futures:
-                del self.permission_futures[request_id]
-            if request_id in self.permission_diff_data:
-                del self.permission_diff_data[request_id]
-            sublime.set_timeout(lambda: self.clear_permission_phantom(request_id), 0)
-
 
     def show_permission_phantom(self, request_id, tool_name, input_data):
         """Show a phantom asking for permission."""
@@ -425,20 +396,49 @@ class ChatSession:
                 plugin.show_diff(self.window, old_text, new_text, name)
             return
 
-        if request_id in self.permission_futures:
-            future = self.permission_futures[request_id]
-            if not future.done():
-                # Get the result based on action
-                if action == "allow":
-                    result = PermissionResultAllow()
-                else:
-                    result = PermissionResultDeny(message="User denied permission via UI")
+        if request_id in self.permission_requests:
+            tool_name, input_data = self.permission_requests[request_id]
+            response_data = {}
 
-                # Set the result in the agent's loop
-                if self.agent_thread and self.agent_thread.loop:
-                    self.agent_thread.loop.call_soon_threadsafe(future.set_result, result)
+            if action == "allow":
+                # Assuming simple allow logic where we pass back input_data
+                response_data = {
+                    "behavior": "allow",
+                    "updatedInput": input_data
+                }
+            else:
+                response_data = {
+                    "behavior": "deny",
+                    "message": "User denied permission via UI"
+                }
 
+            self.send_permission_response(request_id, response_data)
 
+            # Cleanup
+            self.clear_permission_phantom(request_id)
+            del self.permission_requests[request_id]
+            if request_id in self.permission_diff_data:
+                del self.permission_diff_data[request_id]
+
+    def send_permission_response(self, request_id, response_data):
+        """Send a control response back to the agent."""
+        if self.agent_thread and self.agent_thread.loop and self.agent_thread.agent:
+            response = {
+                "type": "control_response",
+                "response": {
+                    "subtype": "success",
+                    "request_id": request_id,
+                    "response": response_data
+                }
+            }
+
+            async def send():
+                try:
+                    await self.agent_thread.agent._write_json(response)
+                except Exception as e:
+                    LOG.error(f"Failed to send permission response: {e}")
+
+            asyncio.run_coroutine_threadsafe(send(), self.agent_thread.loop)
 
     def _handle_agent_message(self, message):
         """Handle messages received from the agent thread."""
@@ -483,6 +483,20 @@ class ChatSession:
                     session_id = message.content.get("session_id")
                     if session_id and message.content.get("subtype") == "init":
                         LOG.info(f"system session_id: {session_id}")
+
+            elif message.type == "control_request":
+                # Handle permission request directly
+                request = message.content.get("request", {})
+                subtype = request.get("subtype")
+                if subtype == "can_use_tool":
+                    tool_name = request.get("tool_name")
+                    input_data = request.get("input", {})
+                    request_id = message.content.get("request_id")
+
+                    # Store input data for later use in response
+                    self.permission_requests[request_id] = (tool_name, input_data)
+
+                    self.show_permission_phantom(request_id, tool_name, input_data)
 
             elif message.type == "user":
                 if (isinstance(message.content["content"], str) and
