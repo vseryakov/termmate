@@ -12,7 +12,7 @@
         "command": "chat_view_set_workspace_input"
     },
     {
-        "caption": "ChatView: Set Model",
+        "caption": "ChatView: Model",
         "command": "chat_view_set_model"
     },
     {

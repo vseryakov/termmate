@@ -1016,7 +1016,7 @@ class ChatViewAddContextCommand(sublime_plugin.TextCommand):
 
 class ChatViewPromptHandler(sublime_plugin.TextInputHandler):
     def name(self):
-        return "chat_view_prompt"
+        return "prompt"
 
     def placeholder(self):
         return "Enter your prompt for ChatView..."
