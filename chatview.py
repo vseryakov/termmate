@@ -86,10 +86,11 @@ class LoadingAnimation:
         frame = self.frames[self.frame_index % len(self.frames)]
 
         html = f"""
-        <body id="chatview-loading">
+        <body id="chatview-loading" style="background-color: transparent; margin: 0; padding: 0;">
             <style>
                 .loading {{
                     color: var(--accent);
+                    background-color: transparent;
                     font-weight: bold;
                     margin-right: 8px;
                     font-family: var(--font-mono);
@@ -475,6 +476,28 @@ class ChatSession:
                     for block in message.content:
                         if hasattr(block, "text"):
                             text_content += block.text
+                        elif isinstance(block, dict) and block.get("type") == "tool_use":
+                            if block.get("name") == "Read":
+                                file_path = block.get("input", {}).get("file_path", "")
+                                if file_path:
+                                    try:
+                                        rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
+                                    except Exception:
+                                        rel_path = file_path
+                                    text_content += f"\n🟣 Read ({rel_path})\n"
+                            elif block.get("name") == "Bash":
+                                command = block.get("input", {}).get("command", "")
+                                if command:
+                                    text_content += f"\n🟣 Bash ({command})\n"
+                            elif block.get("name") in ("Write", "Edit"):
+                                tool_name = block.get("name")
+                                file_path = block.get("input", {}).get("file_path", "")
+                                if file_path:
+                                    try:
+                                        rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
+                                    except Exception:
+                                        rel_path = file_path
+                                    text_content += f"\n🟣 {tool_name} ({rel_path})\n"
 
                 if text_content:
                     self.on_chat_content(text_content + "\n")
