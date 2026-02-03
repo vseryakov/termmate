@@ -250,27 +250,42 @@ class ModelPhantom:
         <body id="chatview-model" style="margin: 0; padding: 0;">
             <style>
                 .model-row {{
-                    background-color: color(var(--background) blend(var(--foreground) 90%));
-                    padding: 4px 8px;
                     margin: 0;
-                    border-bottom: 1px solid color(var(--foreground) alpha(0.1));
+                    padding: 8px 0;
+                    border-bottom: 1px solid color(var(--foreground) alpha(0.06));
                 }}
                 .model-tag {{
-                    color: color(var(--foreground) alpha(0.8));
-                    background-color: color(var(--accent) alpha(0.2));
+                    color: var(--accent);
+                    background-color: color(var(--accent) alpha(0.08));
+                    border: 1px solid color(var(--accent) alpha(0.15));
                     font-size: 0.85em;
                     font-family: var(--font-mono);
                     text-decoration: none;
-                    padding: 3px 8px;
-                    border-radius: 3px;
+                    padding: 4px 8px;
+                    border-radius: 10px;
+                    line-height: 1.2;
                 }}
                 .model-tag:hover {{
-                    color: var(--foreground);
-                    background-color: color(var(--accent) alpha(0.35));
+                    background-color: color(var(--accent) alpha(0.15));
+                    border-color: color(var(--accent) alpha(0.3));
+                }}
+                .icon {{
+                    padding-right: 4px;
+                }}
+                .label {{
+                    opacity: 0.7;
+                    padding-right: 2px;
+                }}
+                .value {{
+                    font-weight: bold;
                 }}
             </style>
             <div class="model-row">
-                <a href="set_model" class="model-tag">Model: {model}</a>
+                <a href="set_model" class="model-tag">
+                    <span class="icon">✨</span>
+                    <span class="label">Model:</span>
+                    <span class="value">{model}</span>
+                </a>
             </div>
         </body>
         """
