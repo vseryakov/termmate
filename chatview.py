@@ -230,6 +230,67 @@ class AgentThread(threading.Thread):
             asyncio.run_coroutine_threadsafe(self._reset_agent(), self.loop)
 
 
+class ModelPhantom:
+    """
+    Displays the current model name as a phantom above the prompt area.
+    """
+    def __init__(self, view, window):
+        self.view = view
+        self.window = window
+        self.phantom_set = sublime.PhantomSet(view, "chatview_model")
+
+    def update(self):
+        """Update the model phantom display."""
+        input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
+        region = sublime.Region(input_start, input_start)
+
+        model = self.window.settings().get(CHAT_MODEL) or "default"
+
+        html = f"""
+        <body id="chatview-model" style="margin: 0; padding: 0;">
+            <style>
+                .model-row {{
+                    background-color: color(var(--background) blend(var(--foreground) 90%));
+                    padding: 4px 8px;
+                    margin: 0;
+                    border-bottom: 1px solid color(var(--foreground) alpha(0.1));
+                }}
+                .model-tag {{
+                    color: color(var(--foreground) alpha(0.8));
+                    background-color: color(var(--accent) alpha(0.2));
+                    font-size: 0.85em;
+                    font-family: var(--font-mono);
+                    text-decoration: none;
+                    padding: 3px 8px;
+                    border-radius: 3px;
+                }}
+                .model-tag:hover {{
+                    color: var(--foreground);
+                    background-color: color(var(--accent) alpha(0.35));
+                }}
+            </style>
+            <div class="model-row">
+                <a href="set_model" class="model-tag">Model: {model}</a>
+            </div>
+        </body>
+        """
+
+        def on_navigate(href):
+            if href == "set_model":
+                self.window.run_command("chat_view_set_model")
+
+        self.phantom_set.update([sublime.Phantom(
+            region,
+            html,
+            sublime.LAYOUT_BLOCK,
+            on_navigate
+        )])
+
+    def clear(self):
+        """Clear the model phantom."""
+        self.phantom_set.update([])
+
+
 class ChatSession:
     """
     Manages the state and UI for a single ChatView session.
@@ -238,6 +299,7 @@ class ChatSession:
         self.window = window
         self.chat_view = view
         self.loading_animation = LoadingAnimation(self.chat_view)
+        self.model_phantom = ModelPhantom(self.chat_view, self.window)
         self.history = []
         self.history_index = 0
         self.history_stash = ""
@@ -267,7 +329,7 @@ class ChatSession:
     def show_permission_phantom(self, request_id, tool_name, input_data):
         """Show a phantom asking for permission."""
         input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
-        region = sublime.Region(input_start, input_start)
+        region = sublime.Region(input_start-1, input_start)
 
         phantom_set = sublime.PhantomSet(self.chat_view, f"permission_{request_id}")
         self.permission_phantoms[request_id] = phantom_set
@@ -314,7 +376,7 @@ class ChatSession:
         <body id="permission-{request_id}">
             <style>
                 .permission-box {{
-                    background-color: color(var(--background) blend(var(--foreground) 95%));
+                    background-color: color(var(--background) blend(var(--foreground) 92%));
                     padding: 10px;
                     border: 1px solid var(--accent);
                     border-radius: 4px;
@@ -550,10 +612,11 @@ class ChatSession:
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
         input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
-        return sublime.Region(input_start, input_start)
+        return sublime.Region(input_start-1, input_start)
 
     def stop(self):
         self.loading_animation.stop()
+        self.model_phantom.clear()
         if self.agent_thread:
             self.agent_thread.stop()
 
@@ -619,7 +682,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         window_id = self.window.id()
         chatview_clients[window_id] = session
 
-        # Show initial prompt
+        # Show initial prompt (this will also update the model phantom)
         chat_view.run_command("chat_input_prompt", {"text": initial_msg})
 
 
@@ -964,18 +1027,30 @@ class ChatViewListener(sublime_plugin.EventListener):
 class ChatOutputAppendCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
-        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
+        input_start = self.view.settings().get(CHAT_INPUT_START, 0) - 1
         inserted = self.view.insert(edit, input_start, text)
         new_pos = input_start + inserted
-        self.view.settings().set(CHAT_INPUT_START, new_pos)
+        self.view.settings().set(CHAT_INPUT_START, new_pos+1)
         self.view.show(self.view.size())
+
+        # Update model phantom at new position
+        # window = self.view.window()
+        # if window and window.id() in chatview_clients:
+        #     session = chatview_clients[window.id()]
+        #     session.model_phantom.update()
 
 
 class ChatInputPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
-        self.view.insert(edit, self.view.size(), "\n\n")
+        self.view.insert(edit, self.view.size(), "\n\n\n")
         self.view.settings().set(CHAT_INPUT_START, self.view.size())
+
+        # Update model phantom at new position
+        window = self.view.window()
+        if window and window.id() in chatview_clients:
+            session = chatview_clients[window.id()]
+            session.model_phantom.update()
 
         # Next input prompt
         self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
@@ -1182,6 +1257,12 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
         if model:
             self.window.settings().set(CHAT_MODEL, model.strip())
             sublime.status_message(f"ChatView model set to: {model}")
+
+            # Update the model phantom if session exists
+            window_id = self.window.id()
+            if window_id in chatview_clients:
+                session = chatview_clients[window_id]
+                session.model_phantom.update()
 
     def input(self, args):
         return ChatViewSetModelInputHandler()
