@@ -322,6 +322,8 @@ class ChatSession:
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
 
+        self.last_is_tool_call = False
+
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
         cli_path = settings.get("agent_command")
@@ -552,8 +554,17 @@ class ChatSession:
                 if hasattr(message, "content"):
                     for block in message.content:
                         if hasattr(block, "text"):
+                            if self.last_is_tool_call:
+                                text_content += "\n"
+                            self.last_is_tool_call = False
+
                             text_content += block.text
+
                         elif isinstance(block, dict) and block.get("type") == "tool_use":
+                            if not self.last_is_tool_call:
+                                text_content += "\n"
+                            self.last_is_tool_call = True
+
                             if block.get("name") == "Read":
                                 file_path = block.get("input", {}).get("file_path", "")
                                 if file_path:
@@ -561,11 +572,11 @@ class ChatSession:
                                         rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
                                     except Exception:
                                         rel_path = file_path
-                                    text_content += f"\n🟣 Read ({rel_path})\n"
+                                    text_content += f"⏺ Read ({rel_path})"
                             elif block.get("name") == "Bash":
                                 command = block.get("input", {}).get("command", "")
                                 if command:
-                                    text_content += f"\n🟣 Bash ({command})\n"
+                                    text_content += f"⏺ Bash ({command})"
                             elif block.get("name") in ("Write", "Edit"):
                                 tool_name = block.get("name")
                                 file_path = block.get("input", {}).get("file_path", "")
@@ -574,7 +585,7 @@ class ChatSession:
                                         rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
                                     except Exception:
                                         rel_path = file_path
-                                    text_content += f"\n🟣 {tool_name} ({rel_path})\n"
+                                    text_content += f"⏺ {tool_name} ({rel_path})"
 
                 if text_content:
                     self.on_chat_content(text_content + "\n")
@@ -1047,12 +1058,6 @@ class ChatOutputAppendCommand(sublime_plugin.TextCommand):
         new_pos = input_start + inserted
         self.view.settings().set(CHAT_INPUT_START, new_pos+1)
         self.view.show(self.view.size())
-
-        # Update model phantom at new position
-        # window = self.view.window()
-        # if window and window.id() in chatview_clients:
-        #     session = chatview_clients[window.id()]
-        #     session.model_phantom.update()
 
 
 class ChatInputPromptCommand(sublime_plugin.TextCommand):
