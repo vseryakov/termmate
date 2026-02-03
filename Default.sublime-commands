@@ -18,5 +18,9 @@
     {
         "caption": "ChatView: Clear Session",
         "command": "chat_view_clear_session"
+    },
+    {
+        "caption": "ChatView: Plan Mode",
+        "command": "chat_view_toggle_plan_mode"
     }
 ]
