@@ -1,4 +1,5 @@
 import logging
+import enum
 import os
 
 import asyncio
@@ -19,9 +20,17 @@ CHAT_VIEW_FLAG = "chatview_chat"
 CHAT_INPUT_START = "chatview_input_start"
 CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_MODEL = "chatview_model"
+CHAT_PLAN_MODE = "chatview_plan_mode"
 CHAT_VIEW_NAME = "Chat View"
 PROMPT_PREFIX = "\n❯ "
+
+# Global store for active ChatSession: window_id -> ChatSession
 chatview_clients = {}
+
+class PlanMode(enum.Enum):
+    FAST = "fast"
+    PLANNING = "planning"
+
 
 def plugin_loaded():
     """
@@ -230,7 +239,7 @@ class AgentThread(threading.Thread):
             asyncio.run_coroutine_threadsafe(self._reset_agent(), self.loop)
 
 
-class ModelPhantom:
+class ModelPanel:
     """
     Displays the current model name as a phantom above the prompt area.
     """
@@ -239,7 +248,7 @@ class ModelPhantom:
         self.window = window
         self.phantom_set = sublime.PhantomSet(view, "chatview_model")
 
-    def update(self, plan_mode=False):
+    def update(self, plan_mode=PlanMode.FAST):
         """Update the model phantom display."""
         input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
         region = sublime.Region(input_start, input_start)
@@ -247,10 +256,9 @@ class ModelPhantom:
         model = self.window.settings().get(CHAT_MODEL) or "default"
 
         plan_tag_html = ""
-        if plan_mode:
+        if plan_mode == PlanMode.PLANNING:
             plan_tag_html = """
                 <a href="toggle_plan" class="model-tag" style="margin-left: 8px;">
-                    <span class="icon">💭</span>
                     <span class="label">PlanMode:</span>
                     <span class="value">Planning</span>
                 </a>
@@ -258,7 +266,6 @@ class ModelPhantom:
         else:
             plan_tag_html = """
                 <a href="toggle_plan" class="model-tag" style="margin-left: 8px;">
-                    <span class="icon">💭</span>
                     <span class="label">PlanMode:</span>
                     <span class="value">Fast</span>
                 </a>
@@ -288,7 +295,7 @@ class ModelPhantom:
                     border-color: color(var(--accent) alpha(0.3));
                 }}
                 .icon {{
-                    padding-right: 4px;
+                    padding-right: 2px;
                 }}
                 .label {{
                     opacity: 0.7;
@@ -312,7 +319,7 @@ class ModelPhantom:
             if href == "set_model":
                 self.window.run_command("chat_view_set_model")
             elif href == "toggle_plan":
-                self.window.run_command("show_overlay", {"overlay": "command_palette", "text": "ChatView: Plan Mode"})
+                self.window.run_command("chat_view_toggle_plan_mode")
 
         self.phantom_set.update([sublime.Phantom(
             region,
@@ -334,7 +341,7 @@ class ChatSession:
         self.window = window
         self.chat_view = view
         self.loading_animation = LoadingAnimation(self.chat_view)
-        self.model_phantom = ModelPhantom(self.chat_view, self.window)
+        self.model_phantom = ModelPanel(self.chat_view, self.window)
         self.history = []
         self.history_index = 0
         self.history_stash = ""
@@ -343,7 +350,6 @@ class ChatSession:
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
 
         self.last_is_tool_call = False
-        self.plan_mode = False
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -667,6 +673,21 @@ class ChatSession:
         if self.agent_thread:
             self.agent_thread.stop()
 
+    @property
+    def plan_mode(self):
+        val = self.window.settings().get(CHAT_PLAN_MODE, PlanMode.FAST.value)
+        try:
+            return PlanMode(val)
+        except ValueError:
+            return PlanMode.FAST
+
+    @plan_mode.setter
+    def plan_mode(self, value):
+        if isinstance(value, PlanMode):
+            self.window.settings().set(CHAT_PLAN_MODE, value.value)
+        else:
+            self.window.settings().set(CHAT_PLAN_MODE, value)
+
     def send_input(self, user_input):
         """Start animation and send to agent."""
         self.agent_thread.send(user_input)
@@ -756,17 +777,11 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
 
         sublime.status_message("Sending message...")
 
-        # Send to session
-        session = chatview_clients[window_id]
-
-        # Detect /plan command to toggle plan mode
-        if user_input.strip() == "/plan":
-            session.plan_mode = True
-            session.model_phantom.update(plan_mode=session.plan_mode)
-
         # Show input text and next prompt (simulated local echo/confirmation)
         self.view.run_command("chat_input_prompt", {"text": ""})
 
+        # Send to session
+        session = chatview_clients[window_id]
         session.history.append(user_input)
         session.history_index = len(session.history)
         session.history_stash = ""
@@ -1321,8 +1336,8 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
 
     def list_items(self):
         return [
-            ("Planning", "planning"),
-            ("Fast", "fast")
+            ("Fast: (executing task straightly, complete faster)", PlanMode.FAST.value),
+            ("Planning: (make plan and todo-list before execute)", PlanMode.PLANNING.value),
         ]
 
     def placeholder(self):
@@ -1336,29 +1351,27 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
     """
     Toggle plan mode for the current ChatView session.
     """
-    def run(self, mode=None):
+    def run(self, mode):
+        # mode is a string value from PlanMode
+        if mode == PlanMode.PLANNING.value:
+            plan_mode_enum = PlanMode.PLANNING
+        else:
+            plan_mode_enum = PlanMode.FAST
+
+        self.window.settings().set(CHAT_PLAN_MODE, plan_mode_enum.value)
+
         window_id = self.window.id()
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
-            if mode == "planning":
-                session.plan_mode = True
-            elif mode == "fast":
-                session.plan_mode = False
-            else:
-                # Direct toggle if no mode provided
-                session.plan_mode = not session.plan_mode
+            session.model_phantom.update(plan_mode=plan_mode_enum)
 
-            session.model_phantom.update(plan_mode=session.plan_mode)
-            status = "Planning" if session.plan_mode else "Fast"
-            sublime.status_message(f"Plan mode set to: {status}")
+        status = "Planning" if plan_mode_enum == PlanMode.PLANNING else "Fast"
+        sublime.status_message(f"Plan mode set to: {status}")
 
     def input(self, args):
         if "mode" not in args:
             return ChatViewPlanModeInputHandler()
         return None
-
-    def is_enabled(self):
-        return self.window.id() in chatview_clients
 
 
 class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
