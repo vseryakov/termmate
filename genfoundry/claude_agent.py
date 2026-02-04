@@ -98,7 +98,8 @@ class ClaudeAgentOptions:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         auth_token: Optional[str] = None,
-        can_use_tool: Optional[Callable] = None
+        can_use_tool: Optional[Callable] = None,
+        plan_mode: bool = False
     ):
         self.cwd = cwd or os.getcwd()
         self.cli_path = cli_path
@@ -111,6 +112,7 @@ class ClaudeAgentOptions:
         self.base_url = base_url
         self.auth_token = auth_token
         self.can_use_tool = can_use_tool
+        self.plan_mode = plan_mode
 
 
 class ClaudeCodeAgent:
@@ -172,9 +174,9 @@ class ClaudeCodeAgent:
             "--permission-prompt-tool=stdio",
         ]
 
-        # Add permission mode if specified
-        if self.options.permission_mode:
-            cmd.extend(["--permission-mode", self.options.permission_mode])
+        # Add plan mode if enabled (overrides permission mode if strictly enforced)
+        if self.options.plan_mode:
+            cmd.extend(["--permission-mode", "plan"])
 
         # Add system prompt if specified
         if self.options.system_prompt:
