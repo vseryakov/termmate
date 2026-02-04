@@ -351,6 +351,7 @@ class ChatSession:
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
 
         self.last_is_tool_call = False
+        self.markdown_formatter = plugin.MarkdownFormatter()
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -652,6 +653,8 @@ class ChatSession:
                 self.stop_loading()
 
             elif message.type == "result":
+                # Flush markdown formatter buffer
+                self.on_chat_content("", flush=True)
                 # Stop loading on turn completion (heuristic)
                 self.stop_loading()
                 self.on_chat_content("\n")
@@ -659,10 +662,12 @@ class ChatSession:
     def stop_loading(self):
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
 
-    def on_chat_content(self, text):
-        sublime.set_timeout(
-            lambda: self.chat_view.run_command("chat_output_append", {"text": text}), 0
-        )
+    def on_chat_content(self, text, flush=False):
+        formatted_text = self.markdown_formatter.format(text, flush=flush)
+        if formatted_text:
+            sublime.set_timeout(
+                lambda: self.chat_view.run_command("chat_output_append", {"text": formatted_text}), 0
+            )
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
