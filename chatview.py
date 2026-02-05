@@ -276,7 +276,7 @@ class ModelPanel:
         <body id="chatview-model" style="margin: 0; padding: 0;">
             <style>
                 .model-row {{
-                    margin: 0;
+                    margin: 0 0 6px 0;
                     padding: 8px 0;
                     border-bottom: 1px solid color(var(--foreground) alpha(0.06));
                 }}
@@ -287,8 +287,8 @@ class ModelPanel:
                     font-size: 0.85em;
                     font-family: var(--font-mono);
                     text-decoration: none;
-                    padding: 4px 8px;
-                    border-radius: 10px;
+                    padding: 4px 6px;
+                    border-radius: 4px;
                     line-height: 1.2;
                 }}
                 .model-tag:hover {{
