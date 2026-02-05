@@ -460,6 +460,10 @@ class ClaudeCodeAgent:
         if msg_type == "result":
             return Message(msg_type, content=data.get("result"), msg_id=msg_id)
 
+        # Handle control_response message
+        if msg_type == "control_response":
+            return Message(msg_type, content=data, msg_id=msg_id)
+
         # Handle other message types
         content = data.get("content") or data.get("message")
         return Message(msg_type, content, msg_id, **data)

@@ -349,6 +349,7 @@ class ChatSession:
         self.permission_phantoms = {} # Map of request_id -> PhantomSet
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
+        self.available_models = []  # Will be populated from control_response
 
         self.last_is_tool_call = False
         self.markdown_formatter = plugin.MarkdownFormatter()
@@ -658,6 +659,15 @@ class ChatSession:
                 # Stop loading on turn completion (heuristic)
                 self.stop_loading()
                 self.on_chat_content("\n")
+
+            elif message.type == "control_response":
+                if hasattr(message, "content") and isinstance(message.content, dict):
+                    response_outer = message.content.get("response", {})
+                    if response_outer.get("subtype") == "success":
+                        response_data = response_outer.get("response", {})
+                        models = response_data.get("models", [])
+                        if models:
+                            self.available_models = models
 
     def stop_loading(self):
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
@@ -1304,12 +1314,44 @@ class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
         return self.window.id() in chatview_clients
 
 
-class ChatViewSetModelInputHandler(sublime_plugin.TextInputHandler):
+class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
+    def name(self):
+        return "model"
+
+    def list_items(self):
+        # Get the active ChatSession to access available_models
+        window = sublime.active_window()
+        if window:
+            window_id = window.id()
+            if window_id in chatview_clients:
+                session = chatview_clients[window_id]
+                if session.available_models:
+                    # Return list of tuples: (display_text, value)
+                    return [
+                        (f"{m['displayName']} - {m['description']}", m['value'])
+                        for m in session.available_models
+                    ]
+
+        # Fallback to default options if no models available yet
+        return [
+            ("Default (recommended)", "default"),
+            ("Opus - Most capable", "opus"),
+            ("Haiku - Fastest", "haiku")
+        ]
+
+    def placeholder(self):
+        return "Select a model"
+
+    def description(self, value, text):
+        return f"Set Model: {value}"
+
+
+class ChatViewSetModelTextHandler(sublime_plugin.TextInputHandler):
     def name(self):
         return "model"
 
     def placeholder(self):
-        return "Select a model(sonnet, opus, haiku)"
+        return "Enter model name (e.g., sonnet, opus, haiku)"
 
     def description(self, text):
         return "Set Model: " + text if text else "Set Model Name"
@@ -1334,7 +1376,16 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
                 session.model_phantom.update(plan_mode=session.plan_mode)
 
     def input(self, args):
-        return ChatViewSetModelInputHandler()
+        # Check if ChatSession has available models
+        window_id = self.window.id()
+        if window_id in chatview_clients:
+            session = chatview_clients[window_id]
+            if session.available_models:
+                # Use ListInputHandler for dropdown selection
+                return ChatViewSetModelListHandler()
+
+        # Fallback to TextInputHandler for manual input
+        return ChatViewSetModelTextHandler()
 
 
 class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
@@ -1350,7 +1401,7 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
     def placeholder(self):
         return "Select mode"
 
-    def description(self, mode):
+    def description(self, mode, text):
         return f"Plan Mode: {mode}"
 
 
