@@ -157,7 +157,8 @@ class AgentThread(threading.Thread):
             auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN"),
             model=self.anthropic_config.get("model"),
             can_use_tool=getattr(self, 'agent_options_callback', None),
-            plan_mode=self.anthropic_config.get("plan_mode", False)
+            plan_mode=self.anthropic_config.get("plan_mode", False),
+            allowed_tools=self.anthropic_config.get("allowed_tools")
         )
 
         try:
@@ -365,7 +366,8 @@ class ChatSession:
             "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
             "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
             "model": self.window.settings().get(CHAT_MODEL),
-            "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value
+            "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
+            "allowed_tools": settings.get("allowed_tools")
         }
 
         # Initialize background agent thread

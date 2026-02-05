@@ -186,6 +186,11 @@ class ClaudeCodeAgent:
         if self.options.model:
             cmd.extend(["--model", self.options.model])
 
+        # Add allowed tools if specified
+        if self.options.allowed_tools:
+            tools_str = ",".join(self.options.allowed_tools)
+            cmd.extend(["--allowedTools", tools_str])
+
         # Set up environment
         env = os.environ.copy()
         env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-py"
