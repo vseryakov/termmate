@@ -378,6 +378,10 @@ class ChatSession:
 
     def show_permission_phantom(self, request_id, tool_name, input_data):
         """Show a phantom asking for permission."""
+        if tool_name == "AskUserQuestion":
+            self.handle_ask_user_question(request_id, input_data)
+            return
+
         input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
         region = sublime.Region(input_start-1, input_start)
 
@@ -492,6 +496,116 @@ class ChatSession:
 
         # Scroll to bottom to show request
         self.chat_view.show(self.chat_view.size())
+
+    def handle_ask_user_question(self, request_id, input_data):
+        """Handle AskUserQuestion tool using Quick Panel."""
+        questions = input_data.get("questions", [])
+        if not questions:
+            # No questions, just allow
+            self.send_permission_response(request_id, {
+                "behavior": "allow",
+                "updatedInput": input_data
+            })
+            return
+
+        # Assuming single question for now
+        question_data = questions[0]
+        question_text = question_data.get("question", "")
+        header = question_data.get("header", "Ask User")
+        options = question_data.get("options", [])
+        multi_select = question_data.get("multiSelect", False)
+
+        # Store selected indices
+        selected_indices = set()
+
+        def on_done(index):
+            if index == -1:
+                # User cancelled (Esc) - Deny permission
+                self.send_permission_response(request_id, {
+                    "behavior": "deny",
+                    "message": "User cancelled selection"
+                })
+                # Clear request map
+                if request_id in self.permission_requests:
+                    del self.permission_requests[request_id]
+                return
+
+            if multi_select:
+                # Handle Done option (index 0)
+                if index == 0:
+                    # Submit selection
+                    self._submit_question_response(request_id, input_data, options, selected_indices)
+                    return
+
+                # Toggle selection (adjust index for "Done" item)
+                real_index = index - 1
+                if real_index in selected_indices:
+                    selected_indices.remove(real_index)
+                else:
+                    selected_indices.add(real_index)
+
+                # Re-show panel
+                show_panel()
+            else:
+                # Single select - Submit immediately
+                selected_indices.add(index)
+                self._submit_question_response(request_id, input_data, options, selected_indices)
+
+        def show_panel():
+            items = []
+
+            if multi_select:
+                # Add Done option
+                items.append(sublime.QuickPanelItem("Done", "Finish selection", kind=sublime.KIND_ID_AMBIGUOUS))
+
+            for i, opt in enumerate(options):
+                label = opt.get("label", "")
+                desc = opt.get("description", "")
+
+                if multi_select:
+                    prefix = "✅ " if i in selected_indices else "⬜ "
+                    # Using QuickPanelItem for better formatting
+                    item = sublime.QuickPanelItem(prefix + label, desc)
+                    items.append(item)
+                else:
+                    items.append(sublime.QuickPanelItem(label, desc))
+
+            # Show panel
+            flags = sublime.KEEP_OPEN_ON_FOCUS_LOST
+            self.window.show_quick_panel(
+                items,
+                on_done,
+                flags=flags,
+                placeholder=question_text
+            )
+
+        # Start by showing panel
+        show_panel()
+
+    def _submit_question_response(self, request_id, input_data, options, selected_indices):
+        """Submit the selected options back to the agent."""
+        # Update input_data with selected state
+        # Create a deep copy to avoid modifying original if needed, but here simple modify is ok
+        # We need to reflect the selection in the input_data structure
+        # Assuming we should mark options as 'selected': True
+
+        questions = input_data.get("questions", [])
+        if questions:
+            opts = questions[0].get("options", [])
+            for i, opt in enumerate(opts):
+                if i in selected_indices:
+                    opt["selected"] = True
+                else:
+                    opt["selected"] = False
+
+        self.send_permission_response(request_id, {
+            "behavior": "allow",
+            "updatedInput": input_data
+        })
+
+        # Cleanup
+        if request_id in self.permission_requests:
+            del self.permission_requests[request_id]
 
     def clear_permission_phantom(self, request_id):
         """Remove the permission phantom."""
