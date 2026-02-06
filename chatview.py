@@ -262,14 +262,14 @@ class ModelPanel:
             plan_tag_html = """
                 <a href="toggle_plan" class="model-tag" style="margin-left: 8px;">
                     <span class="label">PlanMode:</span>
-                    <span class="value">Planning</span>
+                    <span class="value">planning</span>
                 </a>
             """
         else:
             plan_tag_html = """
                 <a href="toggle_plan" class="model-tag" style="margin-left: 8px;">
                     <span class="label">PlanMode:</span>
-                    <span class="value">Fast</span>
+                    <span class="value">fast</span>
                 </a>
             """
 
@@ -1501,8 +1501,8 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
 
     def list_items(self):
         return [
-            ("Fast: (executing task straightly, complete faster)", PlanMode.FAST.value),
-            ("Planning: (make plan and todo-list before execute)", PlanMode.PLANNING.value),
+            ("fast: (executing task straightly, complete faster)", PlanMode.FAST.value),
+            ("planning: (make plan and todo-list before execute)", PlanMode.PLANNING.value),
         ]
 
     def placeholder(self):
@@ -1530,7 +1530,7 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
             session = chatview_clients[window_id]
             session.model_phantom.update(plan_mode=plan_mode_enum)
 
-        status = "Planning" if plan_mode_enum == PlanMode.PLANNING else "Fast"
+        status = "planning" if plan_mode_enum == PlanMode.PLANNING else "fast"
         sublime.status_message(f"Plan mode set to: {status}")
 
     def input(self, args):
