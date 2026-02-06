@@ -413,15 +413,33 @@ class AskUserQuestionPanel:
 
     def _submit(self):
         """Submit the selected options back to the agent."""
+        # Build the answers dictionary based on user selections
+        answers = {}
         questions = self.input_data.get("questions", [])
+
         if questions:
-            opts = questions[0].get("options", [])
-            for i, opt in enumerate(opts):
-                opt["selected"] = i in self.selected_indices
+            question = questions[0]  # Currently only handling single question
+            options = question.get("options", [])
+
+            # Collect selected option labels
+            selected_labels = [options[i]["label"] for i in self.selected_indices if i < len(options)]
+
+            # For AskUserQuestion tool, we need to provide answers in the format:
+            # {"question_text": "selected_answer"}
+            if selected_labels:
+                question_text = question.get("question", "")
+                if self.multi_select:
+                    answers[question_text] = ", ".join(selected_labels)
+                else:
+                    answers[question_text] = selected_labels[0]
+
+        # Update the input_data with answers
+        updated_input = self.input_data.copy()
+        updated_input["answers"] = answers
 
         self.session.send_permission_response(self.request_id, {
             "behavior": "allow",
-            "updatedInput": self.input_data
+            "updatedInput": updated_input
         })
         self._cleanup()
 
