@@ -728,11 +728,23 @@ class ChatSession:
                                         rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
                                     except Exception:
                                         rel_path = file_path
-                                    text_content += f"⏺ Read ({rel_path})"
+
+                                    # Extract offset and limit for line number display
+                                    offset = block.get("input", {}).get("offset")
+                                    limit = block.get("input", {}).get("limit")
+
+                                    if offset is not None and limit is not None:
+                                        start_line = offset
+                                        end_line = offset + limit - 1
+                                        text_content += f"⏺ Read {rel_path}#L{start_line}-L{end_line}"
+                                    elif offset is not None:
+                                        text_content += f"⏺ Read {rel_path}#L{offset}"
+                                    else:
+                                        text_content += f"⏺ Read {rel_path}"
                             elif block.get("name") == "Bash":
                                 command = block.get("input", {}).get("command", "")
                                 if command:
-                                    text_content += f"⏺ Bash ({command})"
+                                    text_content += f"⏺ Bash {command}"
                             elif block.get("name") in ("Write", "Edit"):
                                 tool_name = block.get("name")
                                 file_path = block.get("input", {}).get("file_path", "")
@@ -741,7 +753,7 @@ class ChatSession:
                                         rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
                                     except Exception:
                                         rel_path = file_path
-                                    text_content += f"⏺ {tool_name} ({rel_path})"
+                                    text_content += f"⏺ {tool_name} {rel_path}"
 
                 if text_content:
                     self.on_chat_content(text_content + "\n")
