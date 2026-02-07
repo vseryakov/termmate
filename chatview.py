@@ -13,6 +13,13 @@ from .genfoundry.claude_agent import (
     ClaudeCodeAgent, ClaudeAgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny)
 
+# Constants for gutter highlights
+PROMPT_HIGHLIGHT_KEY = "chatview_prompt_highlight"
+PROMPT_HIGHLIGHT_SCOPE = "region.purplish"
+PROMPT_HIGHLIGHT_ICON = "dot"
+PROMPT_HIGHLIGHT_FLAGS = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.PERSISTENT
+
+
 # logger by package name
 LOG = logging.getLogger(__package__)
 
@@ -494,6 +501,7 @@ class ChatSession:
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
         self.available_models = []  # Will be populated from control_response
+        self.prompt_regions = [] # List of Regions for submitted prompts
 
         self.last_is_tool_call = False
         self.markdown_formatter = plugin.MarkdownFormatter()
@@ -871,14 +879,33 @@ class ChatSession:
         else:
             self.window.settings().set(CHAT_PLAN_MODE, value)
 
-    def send_input(self, user_input):
+    def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
+        if region:
+            self.add_prompt_highlight(region)
         self.agent_thread.send(user_input)
+
+    def add_prompt_highlight(self, region):
+        """Add a gutter highlight to the specified prompt region."""
+        self.prompt_regions.append(region)
+        self.chat_view.add_regions(
+            PROMPT_HIGHLIGHT_KEY,
+            self.prompt_regions,
+            PROMPT_HIGHLIGHT_SCOPE,
+            PROMPT_HIGHLIGHT_ICON,
+            PROMPT_HIGHLIGHT_FLAGS
+        )
+
+    def clear_prompt_highlights(self):
+        """Clear all prompt gutter highlights."""
+        self.prompt_regions = []
+        self.chat_view.erase_regions(PROMPT_HIGHLIGHT_KEY)
 
     def reset_session(self):
         """Reset the chat session by restarting the agent and notifying in UI."""
         # Stop any ongoing loading animation
         self.stop_loading()
+        self.clear_prompt_highlights()
 
         # Show reset message in the history
         reset_msg = "\n\nChatView session reset...\n"
@@ -968,7 +995,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         session.history.append(user_input)
         session.history_index = len(session.history)
         session.history_stash = ""
-        session.send_input(user_input)
+        session.send_input(user_input, region=input_region)
         LOG.info(f"User enter prompt {user_input}")
 
 
