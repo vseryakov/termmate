@@ -335,66 +335,61 @@ class ModelPanel:
         self.phantom_set.update([])
 
 
-class AskUserQuestionPanel:
+class SelectPanel:
     """
-    Handles the AskUserQuestion tool using a Sublime Quick Panel.
+    A generic UI component for showing a Sublime Quick Panel.
     Supports both single and multi-select modes.
     """
-    def __init__(self, session, request_id, input_data):
-        self.session = session
-        self.request_id = request_id
-        self.input_data = input_data
-
-        questions = input_data.get("questions", [])
-        self.question_data = questions[0] if questions else {}
-        self.options = self.question_data.get("options", [])
-        self.multi_select = self.question_data.get("multiSelect", False)
-        self.question_text = self.question_data.get("question", "")
+    def __init__(self, window, items, on_done, placeholder="", multi_select=False):
+        """
+        :param window: Sublime Window object.
+        :param items: List of (label, description) tuples.
+        :param on_done: Callback function(indices or None).
+        :param placeholder: Text to show in the input.
+        :param multi_select: Boolean, if True allows selecting multiple items.
+        """
+        self.window = window
+        self.items = items
+        self.on_done = on_done
+        self.placeholder = placeholder
+        self.multi_select = multi_select
         self.selected_indices = set()
 
     def show(self):
         """Show the quick panel."""
-        items = []
+        display_items = []
 
         if self.multi_select:
-            # Add Done option
-            items.append(sublime.QuickPanelItem("Done", "Finish selection", kind=sublime.KIND_ID_AMBIGUOUS))
-
-        for i, opt in enumerate(self.options):
-            label = opt.get("label", "")
-            desc = opt.get("description", "")
-
-            if self.multi_select:
+            # Add Done option for multi-select
+            display_items.append(sublime.QuickPanelItem("Done", "Finish selection", kind=sublime.KIND_ID_AMBIGUOUS))
+            for i, (label, desc) in enumerate(self.items):
                 prefix = "✅ " if i in self.selected_indices else "⬜ "
-                item = sublime.QuickPanelItem(prefix + label, desc)
-                items.append(item)
-            else:
-                items.append(sublime.QuickPanelItem(label, desc))
+                display_items.append(sublime.QuickPanelItem(prefix + label, desc))
+        else:
+            # Single select items
+            for label, desc in self.items:
+                display_items.append(sublime.QuickPanelItem(label, desc))
 
         # Show panel
         flags = sublime.KEEP_OPEN_ON_FOCUS_LOST if self.multi_select else 0
-        self.session.window.show_quick_panel(
-            items,
-            self.on_done,
+        self.window.show_quick_panel(
+            display_items,
+            self._handle_done,
             flags=flags,
-            placeholder=self.question_text
+            placeholder=self.placeholder
         )
 
-    def on_done(self, index):
-        """Callback for when an item is selected or the panel is closed."""
+    def _handle_done(self, index):
+        """Internal callback for the quick panel."""
         if index == -1:
-            # User cancelled (Esc) - Deny permission
-            self.session.send_permission_response(self.request_id, {
-                "behavior": "deny",
-                "message": "User cancelled selection"
-            })
-            self._cleanup()
+            # User cancelled (Esc)
+            self.on_done(None)
             return
 
         if self.multi_select:
             # Handle Done option (index 0)
             if index == 0:
-                self._submit()
+                self.on_done(list(self.selected_indices))
                 return
 
             # Toggle selection (adjust index for "Done" item)
@@ -408,30 +403,65 @@ class AskUserQuestionPanel:
             sublime.set_timeout(self.show, 0)
         else:
             # Single select - Submit immediately
-            self.selected_indices.add(index)
-            self._submit()
+            self.on_done([index])
 
-    def _submit(self):
-        """Submit the selected options back to the agent."""
-        # Build the answers dictionary based on user selections
-        answers = {}
+
+class AskUserQuestionHandler:
+    """
+    Handles the AskUserQuestion tool using SelectPanel.
+    """
+    def __init__(self, session, request_id, input_data):
+        self.session = session
+        self.request_id = request_id
+        self.input_data = input_data
+
+    def run(self):
+        """Start the question flow."""
         questions = self.input_data.get("questions", [])
+        if not questions:
+            self._cleanup()
+            return
 
-        if questions:
-            question = questions[0]  # Currently only handling single question
-            options = question.get("options", [])
+        # Currently only handling the first question as per original implementation
+        question_data = questions[0]
+        options = question_data.get("options", [])
+        items = [(opt.get("label", ""), opt.get("description", "")) for opt in options]
+        multi_select = question_data.get("multiSelect", False)
+        question_text = question_data.get("question", "")
 
-            # Collect selected option labels
-            selected_labels = [options[i]["label"] for i in self.selected_indices if i < len(options)]
+        def on_done(indices):
+            if indices is None:
+                # User cancelled (Esc) - Deny permission
+                self.session.send_permission_response(self.request_id, {
+                    "behavior": "deny",
+                    "message": "User cancelled selection"
+                })
+            else:
+                # Submit selections
+                self._submit(indices, question_data)
+            self._cleanup()
 
-            # For AskUserQuestion tool, we need to provide answers in the format:
-            # {"question_text": "selected_answer"}
-            if selected_labels:
-                question_text = question.get("question", "")
-                if self.multi_select:
-                    answers[question_text] = ", ".join(selected_labels)
-                else:
-                    answers[question_text] = selected_labels[0]
+        SelectPanel(
+            self.session.window,
+            items,
+            on_done,
+            placeholder=question_text,
+            multi_select=multi_select
+        ).show()
+
+    def _submit(self, indices, question_data):
+        """Submit the selected options back to the agent."""
+        options = question_data.get("options", [])
+        selected_labels = [options[i]["label"] for i in indices if i < len(options)]
+
+        answers = {}
+        if selected_labels:
+            question_text = question_data.get("question", "")
+            multi_select = question_data.get("multiSelect", False)
+            if multi_select:
+                answers[question_text] = ", ".join(selected_labels)
+            else:
+                answers[question_text] = selected_labels[0]
 
         # Update the input_data with answers
         updated_input = self.input_data.copy()
@@ -441,7 +471,6 @@ class AskUserQuestionPanel:
             "behavior": "allow",
             "updatedInput": updated_input
         })
-        self._cleanup()
 
     def _cleanup(self):
         """Remove the request from the session's pending list."""
@@ -613,8 +642,8 @@ class ChatSession:
 
     def handle_ask_user_question(self, request_id, input_data):
         """Handle AskUserQuestion tool using Quick Panel."""
-        panel = AskUserQuestionPanel(self, request_id, input_data)
-        panel.show()
+        handler = AskUserQuestionHandler(self, request_id, input_data)
+        handler.run()
 
     def clear_permission_phantom(self, request_id):
         """Remove the permission phantom."""
