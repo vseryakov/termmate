@@ -533,40 +533,7 @@ class ChatMessageProcessor:
                             if not self.last_is_tool_call:
                                 text_content += "\n"
                             self.last_is_tool_call = True
-
-                            if block.get("name") == "Read":
-                                file_path = block.get("input", {}).get("file_path", "")
-                                if file_path:
-                                    try:
-                                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
-                                    except Exception:
-                                        rel_path = file_path
-
-                                    # Extract offset and limit for line number display
-                                    offset = block.get("input", {}).get("offset")
-                                    limit = block.get("input", {}).get("limit")
-
-                                    if offset is not None and limit is not None:
-                                        start_line = offset
-                                        end_line = offset + limit - 1
-                                        text_content += f"⏺ Read {rel_path}#L{start_line}-L{end_line}"
-                                    elif offset is not None:
-                                        text_content += f"⏺ Read {rel_path}#L{offset}"
-                                    else:
-                                        text_content += f"⏺ Read {rel_path}"
-                            elif block.get("name") == "Bash":
-                                command = block.get("input", {}).get("command", "")
-                                if command:
-                                    text_content += f"⏺ Bash {command}"
-                            elif block.get("name") in ("Write", "Edit"):
-                                tool_name = block.get("name")
-                                file_path = block.get("input", {}).get("file_path", "")
-                                if file_path:
-                                    try:
-                                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
-                                    except Exception:
-                                        rel_path = file_path
-                                    text_content += f"⏺ {tool_name} {rel_path}"
+                            text_content += self._format_tool_block(block)
 
                 if text_content:
                     self.append_content(text_content + "\n")
@@ -616,6 +583,54 @@ class ChatMessageProcessor:
                         models = response_data.get("models", [])
                         if models:
                             self.session.available_models = models
+
+    def _format_tool_block(self, block):
+        """Format a tool use block into a string."""
+        name = block.get("name")
+        input_data = block.get("input", {})
+
+        if name == "Read":
+            file_path = input_data.get("file_path", "")
+            if file_path:
+                try:
+                    rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                except Exception:
+                    rel_path = file_path
+
+                # Extract offset and limit for line number display
+                offset = input_data.get("offset")
+                limit = input_data.get("limit")
+
+                if offset is not None and limit is not None:
+                    start_line = offset
+                    end_line = offset + limit - 1
+                    return f"⏺ Read {rel_path}#L{start_line}-L{end_line}"
+                elif offset is not None:
+                    return f"⏺ Read {rel_path}#L{offset}"
+                else:
+                    return f"⏺ Read {rel_path}"
+
+        elif name == "Bash":
+            command = input_data.get("command", "")
+            if command:
+                return f"⏺ Bash {command}"
+
+        elif name in ("Write", "Edit"):
+            file_path = input_data.get("file_path", "")
+            if file_path:
+                try:
+                    rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                except Exception:
+                    rel_path = file_path
+                return f"⏺ {name} {rel_path}"
+        elif name in ("Grep", "Glob"):
+            pattern = input_data.get("pattern")
+            if pattern:
+                return f"⏺ {name} {pattern}"
+        else:
+            return f"⏺ {name}" if name else ""
+
+        return ""
 
     def append_content(self, text, flush=False):
         """Format and append text to the chat view."""
