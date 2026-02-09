@@ -8,5 +8,5 @@ version: 2
 contexts:
   main:
     - match: '^⏺.*$'
-      scope: string.unquoted.chatview
+      scope: entity.name.function.chatview
     - include: scope:text.html.markdown#markdown

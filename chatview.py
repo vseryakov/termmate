@@ -29,6 +29,7 @@ CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_MODEL = "chatview_model"
 CHAT_PLAN_MODE = "chatview_plan_mode"
 CHAT_VIEW_NAME = "Chat View"
+PACKAGE_NAME = "ChatView"
 PROMPT_PREFIX = "\n❯ "
 
 # Global store for active ChatSession: window_id -> ChatSession
@@ -43,7 +44,7 @@ def plugin_loaded():
     """
     Called by Sublime Text when the plugin is loaded.
     """
-    settings = sublime.load_settings("ChatView.sublime-settings")
+    settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
     plugin.update_log_level(settings)
 
 
@@ -657,7 +658,7 @@ class ChatSession:
         self.message_processor = ChatMessageProcessor(self)
 
         # Load cli_path from settings
-        settings = sublime.load_settings("ChatView.sublime-settings")
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
         cli_path = settings.get("agent_command")
         if not cli_path:
             cli_path = None
@@ -957,7 +958,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chat_view = self.window.new_file()
         chat_view.set_name(CHAT_VIEW_NAME)
         chat_view.set_scratch(True)
-        chat_view.set_syntax_file("Packages/ChatView/ChatMD.sublime-syntax")
+        chat_view.set_syntax_file(f"Packages/{PACKAGE_NAME}/ChatMD.sublime-syntax")
 
         chat_view.settings().set("draw_minimap", False)
         chat_view.settings().set("line_numbers", False)
