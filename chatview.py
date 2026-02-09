@@ -485,6 +485,152 @@ class AskUserQuestionHandler:
             del self.session.permission_requests[self.request_id]
 
 
+class ChatMessageProcessor:
+    """
+    Handles buffering, formatting, and displaying messages from the agent.
+    """
+    def __init__(self, session):
+        self.session = session
+        self.markdown_formatter = plugin.MarkdownFormatter()
+        self.last_is_tool_call = False
+
+    def handle_message(self, message):
+        """Dispatch agent message to appropriate handler."""
+        # Handle error strings passed from thread wrapper
+        if message == "error":
+            pass
+
+        # Check for error tuple/custom protocol from AgentThread
+        if isinstance(message, tuple) and message[0] == "error":
+            self.append_error(message[1])
+            self.session.stop_loading()
+            return
+
+        # Check for reset_complete message
+        if isinstance(message, tuple) and message[0] == "reset_complete":
+            sublime.status_message(message[1])
+            LOG.info("Session reset completed successfully")
+            return
+
+        # Handle Claude Agent Message objects
+        if hasattr(message, "type"):
+            if message.type == "assistant":
+                self.session.start_loading()
+
+                # Extract text content
+                text_content = ""
+                if hasattr(message, "content"):
+                    for block in message.content:
+                        if hasattr(block, "text"):
+                            if self.last_is_tool_call:
+                                text_content += "\n"
+                            self.last_is_tool_call = False
+
+                            text_content += block.text
+
+                        elif isinstance(block, dict) and block.get("type") == "tool_use":
+                            if not self.last_is_tool_call:
+                                text_content += "\n"
+                            self.last_is_tool_call = True
+
+                            if block.get("name") == "Read":
+                                file_path = block.get("input", {}).get("file_path", "")
+                                if file_path:
+                                    try:
+                                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                                    except Exception:
+                                        rel_path = file_path
+
+                                    # Extract offset and limit for line number display
+                                    offset = block.get("input", {}).get("offset")
+                                    limit = block.get("input", {}).get("limit")
+
+                                    if offset is not None and limit is not None:
+                                        start_line = offset
+                                        end_line = offset + limit - 1
+                                        text_content += f"⏺ Read {rel_path}#L{start_line}-L{end_line}"
+                                    elif offset is not None:
+                                        text_content += f"⏺ Read {rel_path}#L{offset}"
+                                    else:
+                                        text_content += f"⏺ Read {rel_path}"
+                            elif block.get("name") == "Bash":
+                                command = block.get("input", {}).get("command", "")
+                                if command:
+                                    text_content += f"⏺ Bash {command}"
+                            elif block.get("name") in ("Write", "Edit"):
+                                tool_name = block.get("name")
+                                file_path = block.get("input", {}).get("file_path", "")
+                                if file_path:
+                                    try:
+                                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                                    except Exception:
+                                        rel_path = file_path
+                                    text_content += f"⏺ {tool_name} {rel_path}"
+
+                if text_content:
+                    self.append_content(text_content + "\n")
+            elif message.type == "system":
+                if hasattr(message, "content") and isinstance(message.content, dict):
+                    session_id = message.content.get("session_id")
+                    if session_id and message.content.get("subtype") == "init":
+                        LOG.info(f"system session_id: {session_id}")
+
+            elif message.type == "control_request":
+                # Handle permission request directly
+                request = message.content.get("request", {})
+                subtype = request.get("subtype")
+                if subtype == "can_use_tool":
+                    tool_name = request.get("tool_name")
+                    input_data = request.get("input", {})
+                    request_id = message.content.get("request_id")
+
+                    # Store input data for later use in response
+                    self.session.permission_requests[request_id] = (tool_name, input_data)
+
+                    self.session.show_permission_phantom(request_id, tool_name, input_data)
+
+            elif message.type == "user":
+                if (isinstance(message.content["content"], str) and
+                    message.content["content"].startswith("<local-command-stdout>")):
+                    local_output = xml.etree.ElementTree.fromstring(message.content["content"])
+                    # local_output.tag is 'local-command-stdout'
+                    self.append_content(local_output.text)
+
+            elif message.type == "error":
+                self.append_error(message.content)
+                self.session.stop_loading()
+
+            elif message.type == "result":
+                # Flush markdown formatter buffer
+                self.append_content("", flush=True)
+                # Stop loading on turn completion (heuristic)
+                self.session.stop_loading()
+                self.append_content("\n")
+
+            elif message.type == "control_response":
+                if hasattr(message, "content") and isinstance(message.content, dict):
+                    response_outer = message.content.get("response", {})
+                    if response_outer.get("subtype") == "success":
+                        response_data = response_outer.get("response", {})
+                        models = response_data.get("models", [])
+                        if models:
+                            self.session.available_models = models
+
+    def append_content(self, text, flush=False):
+        """Format and append text to the chat view."""
+        formatted_text = self.markdown_formatter.format(text, flush=flush)
+        if formatted_text:
+            sublime.set_timeout(
+                lambda: self.session.chat_view.run_command("chat_output_append", {"text": formatted_text}), 0
+            )
+
+    def append_error(self, error_msg):
+        """Append error message to chat view."""
+        sublime.set_timeout(
+            lambda: self.session.chat_view.run_command("chat_output_append", {"text": f"\\n\\nError: {error_msg}\\n"}), 0
+        )
+
+
 class ChatSession:
     """
     Manages the state and UI for a single ChatView session.
@@ -503,8 +649,12 @@ class ChatSession:
         self.available_models = []  # Will be populated from control_response
         self.prompt_regions = [] # List of Regions for submitted prompts
 
-        self.last_is_tool_call = False
-        self.markdown_formatter = plugin.MarkdownFormatter()
+        self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
+        self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
+        self.available_models = []  # Will be populated from control_response
+        self.prompt_regions = [] # List of Regions for submitted prompts
+
+        self.message_processor = ChatMessageProcessor(self)
 
         # Load cli_path from settings
         settings = sublime.load_settings("ChatView.sublime-settings")
@@ -715,143 +865,14 @@ class ChatSession:
 
     def _handle_agent_message(self, message):
         """Handle messages received from the agent thread."""
+        self.message_processor.handle_message(message)
 
-        # LOG.info(f"agent message {message}")
-        # Handle error strings passed from thread wrapper
-        if message == "error":
-            # The actual error message is passed as second arg in the thread,
-            # but here we might receive the raw tuple or just be careful.
-            # actually my AgentThread passes ("error", str(e))
-            # but let's fix that signature in AgentThread
-            pass
-
-        # Check for error tuple/custom protocol from AgentThread
-        if isinstance(message, tuple) and message[0] == "error":
-            self.chat_view.run_command("chat_output_append", {"text": f"\n\nError: {message[1]}\n"})
-            self.stop_loading()
-            return
-
-        # Check for reset_complete message
-        if isinstance(message, tuple) and message[0] == "reset_complete":
-            sublime.status_message(message[1])
-            LOG.info("Session reset completed successfully")
-            return
-
-        # Handle Claude Agent Message objects
-        if hasattr(message, "type"):
-            if message.type == "assistant":
-                sublime.set_timeout(lambda: self.loading_animation.start(self.loading_region), 0)
-
-                # Extract text content
-                text_content = ""
-                if hasattr(message, "content"):
-                    for block in message.content:
-                        if hasattr(block, "text"):
-                            if self.last_is_tool_call:
-                                text_content += "\n"
-                            self.last_is_tool_call = False
-
-                            text_content += block.text
-
-                        elif isinstance(block, dict) and block.get("type") == "tool_use":
-                            if not self.last_is_tool_call:
-                                text_content += "\n"
-                            self.last_is_tool_call = True
-
-                            if block.get("name") == "Read":
-                                file_path = block.get("input", {}).get("file_path", "")
-                                if file_path:
-                                    try:
-                                        rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
-                                    except Exception:
-                                        rel_path = file_path
-
-                                    # Extract offset and limit for line number display
-                                    offset = block.get("input", {}).get("offset")
-                                    limit = block.get("input", {}).get("limit")
-
-                                    if offset is not None and limit is not None:
-                                        start_line = offset
-                                        end_line = offset + limit - 1
-                                        text_content += f"⏺ Read {rel_path}#L{start_line}-L{end_line}"
-                                    elif offset is not None:
-                                        text_content += f"⏺ Read {rel_path}#L{offset}"
-                                    else:
-                                        text_content += f"⏺ Read {rel_path}"
-                            elif block.get("name") == "Bash":
-                                command = block.get("input", {}).get("command", "")
-                                if command:
-                                    text_content += f"⏺ Bash {command}"
-                            elif block.get("name") in ("Write", "Edit"):
-                                tool_name = block.get("name")
-                                file_path = block.get("input", {}).get("file_path", "")
-                                if file_path:
-                                    try:
-                                        rel_path = os.path.relpath(file_path, self.agent_thread.cwd)
-                                    except Exception:
-                                        rel_path = file_path
-                                    text_content += f"⏺ {tool_name} {rel_path}"
-
-                if text_content:
-                    self.on_chat_content(text_content + "\n")
-            elif message.type == "system":
-                if hasattr(message, "content") and isinstance(message.content, dict):
-                    session_id = message.content.get("session_id")
-                    if session_id and message.content.get("subtype") == "init":
-                        LOG.info(f"system session_id: {session_id}")
-
-            elif message.type == "control_request":
-                # Handle permission request directly
-                request = message.content.get("request", {})
-                subtype = request.get("subtype")
-                if subtype == "can_use_tool":
-                    tool_name = request.get("tool_name")
-                    input_data = request.get("input", {})
-                    request_id = message.content.get("request_id")
-
-                    # Store input data for later use in response
-                    self.permission_requests[request_id] = (tool_name, input_data)
-
-                    self.show_permission_phantom(request_id, tool_name, input_data)
-
-            elif message.type == "user":
-                if (isinstance(message.content["content"], str) and
-                    message.content["content"].startswith("<local-command-stdout>")):
-                    local_output = xml.etree.ElementTree.fromstring(message.content["content"])
-                    # local_output.tag is 'local-command-stdout'
-                    self.on_chat_content(local_output.text)
-
-            elif message.type == "error":
-                self.chat_view.run_command(
-                    "chat_output_append", {"text": f"\n\nError: {message.content}\n"}
-                )
-                self.stop_loading()
-
-            elif message.type == "result":
-                # Flush markdown formatter buffer
-                self.on_chat_content("", flush=True)
-                # Stop loading on turn completion (heuristic)
-                self.stop_loading()
-                self.on_chat_content("\n")
-
-            elif message.type == "control_response":
-                if hasattr(message, "content") and isinstance(message.content, dict):
-                    response_outer = message.content.get("response", {})
-                    if response_outer.get("subtype") == "success":
-                        response_data = response_outer.get("response", {})
-                        models = response_data.get("models", [])
-                        if models:
-                            self.available_models = models
+    def start_loading(self):
+        """Start the loading animation."""
+        sublime.set_timeout(lambda: self.loading_animation.start(self.loading_region), 0)
 
     def stop_loading(self):
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)
-
-    def on_chat_content(self, text, flush=False):
-        formatted_text = self.markdown_formatter.format(text, flush=flush)
-        if formatted_text:
-            sublime.set_timeout(
-                lambda: self.chat_view.run_command("chat_output_append", {"text": formatted_text}), 0
-            )
 
     def loading_region(self):
         """Get the region where the loading animation should be displayed."""
