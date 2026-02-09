@@ -711,6 +711,7 @@ class ChatSession:
 
         # Detect Write/Edit tools and store diff data
         has_diff = False
+        display_content = None
         if tool_name == "Edit":
             old_text = input_data.get("old_string", "")
             new_text = input_data.get("new_string", "")
@@ -718,6 +719,25 @@ class ChatSession:
             name = os.path.basename(file_path)
             self.permission_diff_data[request_id] = (old_text, new_text, name)
             has_diff = True
+        elif tool_name == "ExitPlanMode":
+            plan = input_data.get("plan", "")
+            first_line = plan.split("\n")[0] if plan else "Empty Plan"
+            # Store full plan for viewing
+            self.permission_diff_data[request_id] = ("", plan, "Implementation Plan")
+            display_content = (
+                f'📄 <a href="show_plan" class="file-link">plan</a>\n\n'
+                f'{first_line}'
+            )
+            has_diff = True
+
+            # Automatically open the plan in a new view
+            def open_plan():
+                plan_view = self.window.new_file()
+                plan_view.set_name("Implementation Plan")
+                plan_view.run_command("append", {"characters": plan})
+                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+                plan_view.set_scratch(True)
+            sublime.set_timeout(open_plan, 0)
         elif tool_name == "Write":
             file_path = input_data.get("file_path", "")
             new_text = input_data.get("content", "")
@@ -734,7 +754,8 @@ class ChatSession:
 
         # Prepare display content
         if has_diff:
-            display_content = f'📄 <a href="show_diff" class="file-link">{name}</a>'
+            if not display_content:
+                display_content = f'📄 <a href="show_diff" class="file-link">{name}</a>'
         else:
             # Format input data line by line
             display_lines = []
@@ -799,7 +820,7 @@ class ChatSession:
                 }}
             </style>
             <div class="permission-box">
-                <div class="header">Tool Permission Request: {tool_name}</div>
+                <div class="header">Tool Permission: {tool_name}</div>
                 <div class="content">{display_content}</div>
                 <div class="actions">
                     <a href="allow" class="btn btn-allow">Allow</a>
@@ -833,6 +854,15 @@ class ChatSession:
             if request_id in self.permission_diff_data:
                 old_text, new_text, name = self.permission_diff_data[request_id]
                 plugin.show_diff(self.window, old_text, new_text, name)
+            return
+        elif action == "show_plan":
+            if request_id in self.permission_diff_data:
+                _, plan, name = self.permission_diff_data[request_id]
+                plan_view = self.window.new_file()
+                plan_view.set_name(name)
+                plan_view.run_command("append", {"characters": plan})
+                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+                plan_view.set_scratch(True)
             return
 
         if request_id in self.permission_requests:
