@@ -1,0 +1,12 @@
+%YAML 1.2
+---
+# http://www.sublimetext.com/docs/syntax.html
+name: ChatMD
+scope: text.html.markdown.chatview
+version: 2
+
+contexts:
+  main:
+    - match: '^⏺.*$'
+      scope: string.unquoted.chatview
+    - include: scope:text.html.markdown#markdown
