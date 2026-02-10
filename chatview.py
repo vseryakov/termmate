@@ -232,6 +232,29 @@ class AgentThread(threading.Thread):
                 lambda: self.on_message(("error", f"Failed to reset session: {str(e)}")), 0
             )
 
+    async def _send_permission_response(self, request_id, response_data):
+        """Internal async method to send a permission response."""
+        response = {
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": request_id,
+                "response": response_data
+            }
+        }
+        try:
+            await self.agent._write_json(response)
+        except Exception as e:
+            LOG.error(f"Failed to send permission response: {e}")
+
+    def send_permission_response(self, request_id, response_data):
+        """Schedule a permission response to be sent."""
+        if self.loop and self.agent:
+            asyncio.run_coroutine_threadsafe(
+                self._send_permission_response(request_id, response_data),
+                self.loop
+            )
+
     def send(self, text):
         """Queue input to be sent."""
         if self.loop and self.input_queue:
@@ -923,24 +946,9 @@ class ChatSession:
             del self.permission_requests[request_id]
 
     def send_permission_response(self, request_id, response_data):
-        """Send a control response back to the agent."""
-        if self.agent_thread and self.agent_thread.loop and self.agent_thread.agent:
-            response = {
-                "type": "control_response",
-                "response": {
-                    "subtype": "success",
-                    "request_id": request_id,
-                    "response": response_data
-                }
-            }
-
-            async def send():
-                try:
-                    await self.agent_thread.agent._write_json(response)
-                except Exception as e:
-                    LOG.error(f"Failed to send permission response: {e}")
-
-            asyncio.run_coroutine_threadsafe(send(), self.agent_thread.loop)
+        """Send a control response back to the agent via agent_thread."""
+        if self.agent_thread:
+            self.agent_thread.send_permission_response(request_id, response_data)
 
     def _handle_agent_message(self, message):
         """Handle messages received from the agent thread."""
