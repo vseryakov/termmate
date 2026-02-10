@@ -842,6 +842,14 @@ class ChatMessageProcessor:
             pattern = input_data.get("pattern")
             if pattern:
                 return f"⏺ {name} {pattern}"
+        elif name == "WebFetch":
+            url = input_data.get("url", "")
+            if url:
+                return f"⏺ WebFetch {url}"
+        elif name == "WebSearch":
+            query = input_data.get("query", "")
+            if query:
+                return f"⏺ WebSearch ({query})"
         else:
             return f"⏺ {name}" if name else ""
 
