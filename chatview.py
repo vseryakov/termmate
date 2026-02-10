@@ -343,6 +343,198 @@ class ModelPanel:
         self.phantom_set.update([])
 
 
+class PermissionPanel:
+    """
+    Displays permission request phantoms for tool authorization.
+    """
+    def __init__(self, view, window, on_action):
+        """
+        :param view: Sublime View object.
+        :param window: Sublime Window object.
+        :param on_action: Callback function(request_id, action) for handling user actions.
+        """
+        self.view = view
+        self.window = window
+        self.on_action = on_action
+        self.phantom_sets = {}  # Map of request_id -> PhantomSet
+        self.diff_data = {}  # Map of request_id -> (old_text, new_text, name)
+
+    def show(self, request_id, tool_name, input_data):
+        """Show a permission phantom for a tool request."""
+        input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
+        region = sublime.Region(input_start - 1, input_start)
+
+        phantom_set = sublime.PhantomSet(self.view, f"permission_{request_id}")
+        self.phantom_sets[request_id] = phantom_set
+
+        def on_navigate(action):
+            self._handle_navigate(request_id, action)
+
+        # Prepare display content based on tool type
+        display_content = self._prepare_display_content(request_id, tool_name, input_data)
+        has_diff = request_id in self.diff_data
+
+        html = self._build_html(request_id, tool_name, display_content, has_diff)
+        phantom_set.update([sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, on_navigate)])
+
+        # Scroll to bottom to show request
+        self.view.show(self.view.size())
+
+    def _prepare_display_content(self, request_id, tool_name, input_data):
+        """Prepare the display content for a permission request."""
+        if tool_name == "Edit":
+            old_text = input_data.get("old_string", "")
+            new_text = input_data.get("new_string", "")
+            file_path = input_data.get("file_path", "unknown")
+            name = os.path.basename(file_path)
+            self.diff_data[request_id] = (old_text, new_text, name)
+            return f'📄 <a href="show_diff" class="file-link">{name}</a>'
+
+        elif tool_name == "ExitPlanMode":
+            plan = input_data.get("plan", "")
+            first_line = plan.split("\n")[0] if plan else "Empty Plan"
+            self.diff_data[request_id] = ("", plan, "Implementation Plan")
+
+            # Automatically open the plan in a new view
+            def open_plan():
+                plan_view = self.window.new_file()
+                plan_view.set_name("Implementation Plan")
+                plan_view.run_command("append", {"characters": plan})
+                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+                plan_view.set_scratch(True)
+            sublime.set_timeout(open_plan, 0)
+
+            return (
+                f'📄 <a href="show_plan" class="file-link">plan</a>\n\n'
+                f'{first_line}'
+            )
+
+        elif tool_name == "Write":
+            file_path = input_data.get("file_path", "")
+            new_text = input_data.get("content", "")
+            old_text = ""
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        old_text = f.read()
+                except Exception as e:
+                    LOG.error(f"Failed to read file for diff: {e}")
+            name = os.path.basename(file_path) if file_path else "new_file"
+            self.diff_data[request_id] = (old_text, new_text, name)
+            return f'📄 <a href="show_diff" class="file-link">{name}</a>'
+
+        else:
+            # Format input data line by line
+            display_lines = []
+            for k, v in input_data.items():
+                if isinstance(v, str):
+                    display_lines.append(f"{k}: {v}")
+            return "\n".join(display_lines)
+
+    def _build_html(self, request_id, tool_name, display_content, has_diff):
+        """Build the HTML for the permission phantom."""
+        return f"""
+        <body id="permission-{request_id}">
+            <style>
+                .permission-box {{
+                    background-color: color(var(--background) blend(var(--foreground) 92%));
+                    padding: 10px;
+                    border: 1px solid var(--accent);
+                    border-radius: 4px;
+                    margin: 10px 0;
+                }}
+                .header {{
+                    font-weight: bold;
+                    color: var(--accent);
+                    margin-bottom: 5px;
+                }}
+                .content {{
+                    font-family: var(--font-mono);
+                    font-size: 0.9em;
+                    white-space: pre-wrap;
+                    margin-bottom: 20px;
+                }}
+                .file-link {{
+                    text-decoration: none;
+                    color: var(--accent);
+                    font-weight: bold;
+                    font-size: 1.1em;
+                    background-color: color(var(--background) blend(var(--foreground) 85%));
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                }}
+                .actions {{
+                    display: block;
+                    margin-top: 10px;
+                }}
+                .btn {{
+                    text-decoration: none;
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                }}
+                .btn-allow {{
+                    background-color: var(--greenish);
+                    color: var(--background);
+                }}
+                .btn-deny {{
+                    background-color: var(--redish);
+                    color: var(--background);
+                    margin-left: 10px;
+                }}
+                .btn-diff {{
+                    background-color: var(--accent);
+                    color: var(--background);
+                    margin-left: 10px;
+                }}
+            </style>
+            <div class="permission-box">
+                <div class="header">Tool Permission: {tool_name}</div>
+                <div class="content">{display_content}</div>
+                <div class="actions">
+                    <a href="allow" class="btn btn-allow">Allow</a>
+                    <a href="deny" class="btn btn-deny">Deny</a>
+                </div>
+            </div>
+        </body>
+        """
+
+    def _handle_navigate(self, request_id, action):
+        """Handle navigation actions from the phantom."""
+        if action == "show_diff":
+            if request_id in self.diff_data:
+                old_text, new_text, name = self.diff_data[request_id]
+                plugin.show_diff(self.window, old_text, new_text, name)
+            return
+        elif action == "show_plan":
+            if request_id in self.diff_data:
+                _, plan, name = self.diff_data[request_id]
+                plan_view = self.window.new_file()
+                plan_view.set_name(name)
+                plan_view.run_command("append", {"characters": plan})
+                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+                plan_view.set_scratch(True)
+            return
+
+        # For allow/deny actions, delegate to the callback
+        self.on_action(request_id, action)
+
+    def clear(self, request_id):
+        """Remove a permission phantom."""
+        if request_id in self.phantom_sets:
+            self.phantom_sets[request_id].update([])
+            del self.phantom_sets[request_id]
+        if request_id in self.diff_data:
+            del self.diff_data[request_id]
+
+    def clear_all(self):
+        """Remove all permission phantoms."""
+        for phantom_set in self.phantom_sets.values():
+            phantom_set.update([])
+        self.phantom_sets.clear()
+        self.diff_data.clear()
+
+
 class SelectPanel:
     """
     A generic UI component for showing a Sublime Quick Panel.
@@ -656,17 +848,13 @@ class ChatSession:
         self.chat_view = view
         self.loading_animation = LoadingAnimation(self.chat_view)
         self.model_phantom = ModelPanel(self.chat_view, self.window)
+        self.permission_panel = PermissionPanel(
+            self.chat_view, self.window, self._handle_permission_decision
+        )
         self.history = []
         self.history_index = 0
         self.history_stash = ""
-        self.permission_phantoms = {} # Map of request_id -> PhantomSet
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
-        self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
-        self.available_models = []  # Will be populated from control_response
-        self.prompt_regions = [] # List of Regions for submitted prompts
-
-        self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
-        self.permission_diff_data = {} # Map of request_id -> (old_text, new_text, name)
         self.available_models = []  # Will be populated from control_response
         self.prompt_regions = [] # List of Regions for submitted prompts
 
@@ -699,141 +887,7 @@ class ChatSession:
             self.handle_ask_user_question(request_id, input_data)
             return
 
-        input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
-        region = sublime.Region(input_start-1, input_start)
-
-        phantom_set = sublime.PhantomSet(self.chat_view, f"permission_{request_id}")
-        self.permission_phantoms[request_id] = phantom_set
-
-        # Resolve request_id for the callback
-        def on_navigate(action):
-            self.handle_permission_action(request_id, action)
-
-        # Detect Write/Edit tools and store diff data
-        has_diff = False
-        display_content = None
-        if tool_name == "Edit":
-            old_text = input_data.get("old_string", "")
-            new_text = input_data.get("new_string", "")
-            file_path = input_data.get("file_path", "unknown")
-            name = os.path.basename(file_path)
-            self.permission_diff_data[request_id] = (old_text, new_text, name)
-            has_diff = True
-        elif tool_name == "ExitPlanMode":
-            plan = input_data.get("plan", "")
-            first_line = plan.split("\n")[0] if plan else "Empty Plan"
-            # Store full plan for viewing
-            self.permission_diff_data[request_id] = ("", plan, "Implementation Plan")
-            display_content = (
-                f'📄 <a href="show_plan" class="file-link">plan</a>\n\n'
-                f'{first_line}'
-            )
-            has_diff = True
-
-            # Automatically open the plan in a new view
-            def open_plan():
-                plan_view = self.window.new_file()
-                plan_view.set_name("Implementation Plan")
-                plan_view.run_command("append", {"characters": plan})
-                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
-                plan_view.set_scratch(True)
-            sublime.set_timeout(open_plan, 0)
-        elif tool_name == "Write":
-            file_path = input_data.get("file_path", "")
-            new_text = input_data.get("content", "")
-            old_text = ""
-            if file_path and os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        old_text = f.read()
-                except Exception as e:
-                    LOG.error(f"Failed to read file for diff: {e}")
-            name = os.path.basename(file_path) if file_path else "new_file"
-            self.permission_diff_data[request_id] = (old_text, new_text, name)
-            has_diff = True
-
-        # Prepare display content
-        if has_diff:
-            if not display_content:
-                display_content = f'📄 <a href="show_diff" class="file-link">{name}</a>'
-        else:
-            # Format input data line by line
-            display_lines = []
-            for k, v in input_data.items():
-                if isinstance(v, str):
-                    display_lines.append(f"{k}: {v}")
-            display_content = "\n".join(display_lines)
-
-        html = f"""
-        <body id="permission-{request_id}">
-            <style>
-                .permission-box {{
-                    background-color: color(var(--background) blend(var(--foreground) 92%));
-                    padding: 10px;
-                    border: 1px solid var(--accent);
-                    border-radius: 4px;
-                    margin: 10px 0;
-                }}
-                .header {{
-                    font-weight: bold;
-                    color: var(--accent);
-                    margin-bottom: 5px;
-                }}
-                .content {{
-                    font-family: var(--font-mono);
-                    font-size: 0.9em;
-                    white-space: pre-wrap;
-                    margin-bottom: 20px;
-                }}
-                .file-link {{
-                    text-decoration: none;
-                    color: var(--accent);
-                    font-weight: bold;
-                    font-size: 1.1em;
-                    background-color: color(var(--background) blend(var(--foreground) 85%));
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                }}
-                .actions {{
-                    display: block;
-                    margin-top: 10px;
-                }}
-                .btn {{
-                    text-decoration: none;
-                    padding: 4px 8px;
-                    border-radius: 3px;
-                    font-weight: bold;
-                }}
-                .btn-allow {{
-                    background-color: var(--greenish);
-                    color: var(--background);
-                }}
-                .btn-deny {{
-                    background-color: var(--redish);
-                    color: var(--background);
-                    margin-left: 10px;
-                }}
-                .btn-diff {{
-                    background-color: var(--accent);
-                    color: var(--background);
-                    margin-left: 10px;
-                }}
-            </style>
-            <div class="permission-box">
-                <div class="header">Tool Permission: {tool_name}</div>
-                <div class="content">{display_content}</div>
-                <div class="actions">
-                    <a href="allow" class="btn btn-allow">Allow</a>
-                    <a href="deny" class="btn btn-deny">Deny</a>
-                </div>
-            </div>
-        </body>
-        """
-
-        phantom_set.update([sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, on_navigate)])
-
-        # Scroll to bottom to show request
-        self.chat_view.show(self.chat_view.size())
+        self.permission_panel.show(request_id, tool_name, input_data)
 
     def handle_ask_user_question(self, request_id, input_data):
         """Handle AskUserQuestion tool using Quick Panel."""
@@ -842,35 +896,16 @@ class ChatSession:
 
     def clear_permission_phantom(self, request_id):
         """Remove the permission phantom."""
-        if request_id in self.permission_phantoms:
-            self.permission_phantoms[request_id].update([])
-            del self.permission_phantoms[request_id]
+        self.permission_panel.clear(request_id)
 
-    def handle_permission_action(self, request_id, action):
-        """Handle allow/deny action from UI."""
-        LOG.info(f"Permission action: {action} for request {request_id}")
-
-        if action == "show_diff":
-            if request_id in self.permission_diff_data:
-                old_text, new_text, name = self.permission_diff_data[request_id]
-                plugin.show_diff(self.window, old_text, new_text, name)
-            return
-        elif action == "show_plan":
-            if request_id in self.permission_diff_data:
-                _, plan, name = self.permission_diff_data[request_id]
-                plan_view = self.window.new_file()
-                plan_view.set_name(name)
-                plan_view.run_command("append", {"characters": plan})
-                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
-                plan_view.set_scratch(True)
-            return
+    def _handle_permission_decision(self, request_id, action):
+        """Handle allow/deny decision from PermissionPanel."""
+        LOG.info(f"Permission decision: {action} for request {request_id}")
 
         if request_id in self.permission_requests:
             tool_name, input_data = self.permission_requests[request_id]
-            response_data = {}
 
             if action == "allow":
-                # Assuming simple allow logic where we pass back input_data
                 response_data = {
                     "behavior": "allow",
                     "updatedInput": input_data
@@ -886,8 +921,6 @@ class ChatSession:
             # Cleanup
             self.clear_permission_phantom(request_id)
             del self.permission_requests[request_id]
-            if request_id in self.permission_diff_data:
-                del self.permission_diff_data[request_id]
 
     def send_permission_response(self, request_id, response_data):
         """Send a control response back to the agent."""
@@ -928,6 +961,7 @@ class ChatSession:
     def stop(self):
         self.loading_animation.stop()
         self.model_phantom.clear()
+        self.permission_panel.clear_all()
         if self.agent_thread:
             self.agent_thread.stop()
 
