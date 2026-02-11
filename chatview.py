@@ -391,7 +391,7 @@ class PermissionPanel:
         self.phantom_sets = {}  # Map of request_id -> PhantomSet
         self.diff_data = {}  # Map of request_id -> (old_text, new_text, name)
 
-    def show(self, request_id, tool_name, input_data):
+    def show(self, request_id, tool_name, input_data, approve_mode=None):
         """Show a permission phantom for a tool request."""
         input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
         region = sublime.Region(input_start - 1, input_start)
@@ -406,7 +406,11 @@ class PermissionPanel:
         display_content = self._prepare_display_content(request_id, tool_name, input_data)
         has_diff = request_id in self.diff_data
 
-        html = self._build_html(request_id, tool_name, display_content, has_diff)
+        allow_chat_btn = ""
+        if approve_mode == ApproveMode.DEFAULT.value:
+            allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
+
+        html = self._build_html(request_id, tool_name, display_content, has_diff, allow_chat_btn)
         phantom_set.update([sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, on_navigate)])
 
         # Scroll to bottom to show request
@@ -463,14 +467,14 @@ class PermissionPanel:
                     display_lines.append(f"{k}: {v}")
             return "\n".join(display_lines)
 
-    def _build_html(self, request_id, tool_name, display_content, has_diff):
+    def _build_html(self, request_id, tool_name, display_content, has_diff, allow_chat_btn=""):
         """Build the HTML for the permission phantom."""
         return f"""
         <body id="permission-{request_id}">
             <style>
                 .permission-box {{
                     background-color: color(var(--background) blend(var(--foreground) 92%));
-                    padding: 10px;
+                    padding: 10px 10px 15px 10px;
                     border: 1px solid var(--accent);
                     border-radius: 4px;
                     margin: 10px 0;
@@ -497,9 +501,11 @@ class PermissionPanel:
                 }}
                 .actions {{
                     display: block;
-                    margin-top: 10px;
+                    margin-top: 15px;
+                    margin-bottom: 5px;
                 }}
                 .btn {{
+                    display: inline-block;
                     text-decoration: none;
                     padding: 4px 8px;
                     border-radius: 3px;
@@ -514,6 +520,12 @@ class PermissionPanel:
                     color: var(--background);
                     margin-left: 10px;
                 }}
+                .btn-chat {{
+                    background-color: color(var(--background) blend(var(--foreground) 75%));
+                    color: var(--foreground);
+                    margin-left: 30px;
+                    border: 1px solid color(var(--foreground) alpha(0.2));
+                }}
                 .btn-diff {{
                     background-color: var(--accent);
                     color: var(--background);
@@ -526,6 +538,7 @@ class PermissionPanel:
                 <div class="actions">
                     <a href="allow" class="btn btn-allow">Allow</a>
                     <a href="deny" class="btn btn-deny">Deny</a>
+                    {allow_chat_btn}
                 </div>
             </div>
         </body>
@@ -901,6 +914,7 @@ class ChatSession:
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.available_models = []  # Will be populated from control_response
         self.prompt_regions = [] # List of Regions for submitted prompts
+        self.session_allow_all = False
 
         self.message_processor = ChatMessageProcessor(self)
 
@@ -931,6 +945,10 @@ class ChatSession:
             self.handle_ask_user_question(request_id, input_data)
             return
 
+        if self.session_allow_all:
+            self._auto_approve(request_id, input_data)
+            return
+
         approve_mode = self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
 
         if approve_mode == ApproveMode.ACCEPT_ALL.value:
@@ -942,7 +960,7 @@ class ChatSession:
             self._auto_approve(request_id, input_data)
             return
 
-        self.permission_panel.show(request_id, tool_name, input_data)
+        self.permission_panel.show(request_id, tool_name, input_data, approve_mode=approve_mode)
 
     def _auto_approve(self, request_id, input_data):
         """Auto-approve a permission request without showing a phantom."""
@@ -971,6 +989,12 @@ class ChatSession:
             tool_name, input_data = self.permission_requests[request_id]
 
             if action == "allow":
+                response_data = {
+                    "behavior": "allow",
+                    "updatedInput": input_data
+                }
+            elif action == "allow_chat":
+                self.session_allow_all = True
                 response_data = {
                     "behavior": "allow",
                     "updatedInput": input_data
@@ -1057,6 +1081,7 @@ class ChatSession:
         # Stop any ongoing loading animation
         self.stop_loading()
         self.clear_prompt_highlights()
+        self.session_allow_all = False
 
         # Show reset message in the history
         reset_msg = "\n\nChatView session reset...\n"
