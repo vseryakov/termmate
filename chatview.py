@@ -1758,14 +1758,25 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
 
 
 class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, current_mode=None):
+        self.current_mode = current_mode
+
     def name(self):
         return "mode"
 
     def list_items(self):
-        return [
+        items = [
             ("fast: (executing task straightly, complete faster)", PlanMode.FAST.value),
             ("planning: (make plan and todo-list before execute)", PlanMode.PLANNING.value),
         ]
+
+        if self.current_mode:
+            for i, item in enumerate(items):
+                if item[1] == self.current_mode:
+                    items.insert(0, items.pop(i))
+                    break
+
+        return items
 
     def placeholder(self):
         return "Select mode"
@@ -1839,7 +1850,8 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "mode" not in args:
-            return ChatViewPlanModeInputHandler()
+            current_mode = self.window.settings().get(CHAT_PLAN_MODE, PlanMode.FAST.value)
+            return ChatViewPlanModeInputHandler(current_mode)
         return None
 
 
