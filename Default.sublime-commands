@@ -8,11 +8,11 @@
         "command": "chat_view_prompt"
     },
     {
-        "caption": "ChatView: Set Working Directory",
+        "caption": "ChatView: Set Working Directory\tworkspace cwd path",
         "command": "chat_view_set_workspace_input"
     },
     {
-        "caption": "ChatView: Approve Mode",
+        "caption": "ChatView: Approve Mode\ttool permission mode",
         "command": "chat_view_set_approve_mode"
     },
     {
