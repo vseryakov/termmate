@@ -40,6 +40,15 @@ class PlanMode(enum.Enum):
     PLANNING = "planning"
 
 
+CHAT_APPROVE_MODE = "chatview_approve_mode"
+
+
+class ApproveMode(enum.Enum):
+    DEFAULT = "default"
+    ALLOW_EDIT = "allow-edit"
+    ACCEPT_ALL = "accept-all"
+
+
 def plugin_loaded():
     """
     Called by Sublime Text when the plugin is loaded.
@@ -860,13 +869,17 @@ class ChatMessageProcessor:
         formatted_text = self.markdown_formatter.format(text, flush=flush)
         if formatted_text:
             sublime.set_timeout(
-                lambda: self.session.chat_view.run_command("chat_output_append", {"text": formatted_text}), 0
+                lambda: self.session.chat_view.run_command("chat_output_append",
+                    {"text": formatted_text}),
+                0
             )
 
     def append_error(self, error_msg):
         """Append error message to chat view."""
         sublime.set_timeout(
-            lambda: self.session.chat_view.run_command("chat_output_append", {"text": f"\\n\\nError: {error_msg}\\n"}), 0
+            lambda: self.session.chat_view.run_command("chat_output_append",
+                {"text": f"\\n\\nError: {error_msg}\\n"}),
+            0
         )
 
 
@@ -918,7 +931,28 @@ class ChatSession:
             self.handle_ask_user_question(request_id, input_data)
             return
 
+        approve_mode = self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
+
+        if approve_mode == ApproveMode.ACCEPT_ALL.value:
+            self._auto_approve(request_id, input_data)
+            return
+
+        risky_tools = ("Bash",)
+        if approve_mode == ApproveMode.ALLOW_EDIT.value and tool_name not in risky_tools:
+            self._auto_approve(request_id, input_data)
+            return
+
         self.permission_panel.show(request_id, tool_name, input_data)
+
+    def _auto_approve(self, request_id, input_data):
+        """Auto-approve a permission request without showing a phantom."""
+        if request_id in self.permission_requests:
+            response_data = {
+                "behavior": "allow",
+                "updatedInput": input_data
+            }
+            self.send_permission_response(request_id, response_data)
+            del self.permission_requests[request_id]
 
     def handle_ask_user_question(self, request_id, input_data):
         """Handle AskUserQuestion tool using Quick Panel."""
@@ -1713,6 +1747,36 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
 
     def description(self, mode, text):
         return f"Plan Mode: {mode}"
+
+
+class ChatViewApproveModeInputHandler(sublime_plugin.ListInputHandler):
+    def name(self):
+        return "mode"
+
+    def list_items(self):
+        return [
+            ("default: ask for confirmation on tool call", ApproveMode.DEFAULT.value),
+            ("allow-edit: auto-approve file edits", ApproveMode.ALLOW_EDIT.value),
+            ("accept-all: accept all without asking", ApproveMode.ACCEPT_ALL.value),
+        ]
+
+    def placeholder(self):
+        return "Select approve mode on tool call"
+
+    def description(self, mode, text):
+        return f"Approve Mode: {mode}"
+
+
+class ChatViewSetApproveModeCommand(sublime_plugin.WindowCommand):
+    """Set permission approve mode for the current ChatView session."""
+    def run(self, mode):
+        self.window.settings().set(CHAT_APPROVE_MODE, mode)
+        sublime.status_message(f"Approve mode set to: {mode}")
+
+    def input(self, args):
+        if "mode" not in args:
+            return ChatViewApproveModeInputHandler()
+        return None
 
 
 class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
