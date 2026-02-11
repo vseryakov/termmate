@@ -1775,21 +1775,32 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
 
 
 class ChatViewApproveModeInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, current_mode=None):
+        self.current_mode = current_mode
+
     def name(self):
         return "mode"
 
     def list_items(self):
-        return [
+        items = [
             ("default: ask for confirmation on tool call", ApproveMode.DEFAULT.value),
             ("allow-edit: auto-approve file edits", ApproveMode.ALLOW_EDIT.value),
             ("accept-all: accept all without asking", ApproveMode.ACCEPT_ALL.value),
         ]
 
-    def placeholder(self):
-        return "Select approve mode on tool call"
+        if self.current_mode:
+            # Find the item with the current mode and move it to the front
+            for i, item in enumerate(items):
+                if item[1] == self.current_mode:
+                    items.insert(0, items.pop(i))
+                    break
 
-    def description(self, mode, text):
-        return f"Approve Mode: {mode}"
+        return items
+
+    def placeholder(self):
+        if self.current_mode:
+            return f" ( {self.current_mode} ); select approve mode on tool call"
+        return "select approve mode on tool call"
 
 
 class ChatViewSetApproveModeCommand(sublime_plugin.WindowCommand):
@@ -1800,7 +1811,8 @@ class ChatViewSetApproveModeCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "mode" not in args:
-            return ChatViewApproveModeInputHandler()
+            current_mode = self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
+            return ChatViewApproveModeInputHandler(current_mode)
         return None
 
 
