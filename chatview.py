@@ -406,11 +406,7 @@ class PermissionPanel:
         display_content = self._prepare_display_content(request_id, tool_name, input_data)
         has_diff = request_id in self.diff_data
 
-        allow_chat_btn = ""
-        if approve_mode == ApproveMode.DEFAULT.value:
-            allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
-
-        html = self._build_html(request_id, tool_name, display_content, has_diff, allow_chat_btn)
+        html = self._build_html(request_id, tool_name, display_content, has_diff, approve_mode)
         phantom_set.update([sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, on_navigate)])
 
         # Scroll to bottom to show request
@@ -467,8 +463,12 @@ class PermissionPanel:
                     display_lines.append(f"{k}: {v}")
             return "\n".join(display_lines)
 
-    def _build_html(self, request_id, tool_name, display_content, has_diff, allow_chat_btn=""):
+    def _build_html(self, request_id, tool_name, display_content, has_diff, approve_mode=None):
         """Build the HTML for the permission phantom."""
+        allow_chat_btn = ""
+        if approve_mode == ApproveMode.DEFAULT.value:
+            allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
+
         return f"""
         <body id="permission-{request_id}">
             <style>
