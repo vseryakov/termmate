@@ -18,104 +18,10 @@ from enum import Enum
 # logger by package name
 LOG = logging.getLogger(__package__)
 
-class MessageType(Enum):
-    """Types of messages that can be received from Claude"""
-    TEXT = "text"
-    TOOL_USE = "tool_use"
-    TOOL_RESULT = "tool_result"
-    ERROR = "error"
-    STOP = "stop"
-    THINKING = "thinking"
+from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
+    PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent
 
-
-class Message:
-    """Represents a message from Claude CLI"""
-
-    def __init__(self, msg_type: str, content: Any = None, msg_id: Optional[str] = None, **kwargs):
-        self.type = msg_type
-        self.content = content
-        self.id = msg_id
-        self.raw_data = kwargs
-
-    def __repr__(self):
-        return f"Message(type={self.type}, id={self.id}, content={self.content})"
-
-
-class TextBlock:
-    """Represents a text content block"""
-
-    def __init__(self, text: str):
-        self.text = text
-        self.type = "text"
-
-    def __repr__(self):
-        return f"TextBlock(text={self.text[:50]}...)"
-
-
-class PermissionResultAllow:
-    """Result indicating permission is granted"""
-    def __init__(self, updated_input: Optional[Dict[str, Any]] = None):
-        self.updated_input = updated_input
-
-
-class PermissionResultDeny:
-    """Result indicating permission is denied"""
-    def __init__(self, message: str = "Permission denied"):
-        self.message = message
-
-
-class ToolPermissionContext:
-    """Context for tool permission requests"""
-    def __init__(self, suggestions: Optional[List[Dict[str, Any]]] = None):
-        self.suggestions = suggestions or []
-
-
-class AssistantMessage:
-    """Represents an assistant message with content blocks"""
-
-    def __init__(self, content: List[Union[TextBlock, Any]], msg_id: Optional[str] = None):
-        self.content = content
-        self.id = msg_id
-        self.role = "assistant"
-        self.type = "assistant"  # Add type attribute for consistency
-
-    def __repr__(self):
-        return f"AssistantMessage(id={self.id}, blocks={len(self.content)})"
-
-
-class ClaudeAgentOptions:
-    """Configuration options for Claude Agent"""
-
-    def __init__(
-        self,
-        cwd: Optional[str] = None,
-        cli_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        max_turns: Optional[int] = None,
-        allowed_tools: Optional[List[str]] = None,
-        permission_mode: str = "default",
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        auth_token: Optional[str] = None,
-        can_use_tool: Optional[Callable] = None,
-        plan_mode: bool = False
-    ):
-        self.cwd = cwd or os.getcwd()
-        self.cli_path = cli_path
-        self.system_prompt = system_prompt
-        self.max_turns = max_turns
-        self.allowed_tools = allowed_tools or []
-        self.permission_mode = permission_mode  # 'default', 'acceptEdits', 'bypassPermissions'
-        self.model = model
-        self.api_key = api_key
-        self.base_url = base_url
-        self.auth_token = auth_token
-        self.can_use_tool = can_use_tool
-        self.plan_mode = plan_mode
-
-
-class ClaudeCodeAgent:
+class ClaudeCodeAgent(BaseAgent):
     """
     Client for bidirectional, interactive conversations with Claude Code.
 
@@ -129,9 +35,9 @@ class ClaudeCodeAgent:
     - Control flow: Support for interrupts and session management
     """
 
-    def __init__(self, options: Optional[ClaudeAgentOptions] = None):
+    def __init__(self, options: Optional[AgentOptions] = None):
         """Initialize Claude SDK client"""
-        self.options = options or ClaudeAgentOptions()
+        self.options = options or AgentOptions()
         self.process: Optional[asyncio.subprocess.Process] = None
         self.is_connected = False
         self._read_task: Optional[asyncio.Task] = None
@@ -544,7 +450,7 @@ class ClaudeCodeAgent:
 
 async def query(
     prompt: str,
-    options: Optional[ClaudeAgentOptions] = None
+    options: Optional[AgentOptions] = None
 ) -> AsyncIterator[Message]:
     """
     Query Claude Code for one-shot or unidirectional streaming interactions.
@@ -554,7 +460,7 @@ async def query(
 
     Args:
         prompt: The prompt to send to Claude
-        options: Optional configuration (defaults to ClaudeAgentOptions() if None)
+        options: Optional configuration (defaults to AgentOptions() if None)
 
     Yields:
         Messages from the conversation
@@ -567,7 +473,7 @@ async def query(
                         print(block.text)
     """
     if options is None:
-        options = ClaudeAgentOptions()
+        options = AgentOptions()
 
     client = ClaudeCodeAgent(options=options)
 

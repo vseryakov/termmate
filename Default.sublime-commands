@@ -20,6 +20,10 @@
         "command": "chat_view_set_model"
     },
     {
+        "caption": "ChatView: Agent",
+        "command": "chat_view_set_agent"
+    },
+    {
         "caption": "ChatView: Clear Session",
         "command": "chat_view_clear_session"
     },

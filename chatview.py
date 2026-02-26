@@ -9,8 +9,8 @@ import sublime
 import sublime_plugin
 
 from . import plugin
-from .genfoundry.claude_agent import (
-    ClaudeCodeAgent, ClaudeAgentOptions, AssistantMessage, TextBlock,
+from .genfoundry import (
+    ClaudeCodeAgent, CodexAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny)
 
 # Constants for gutter highlights
@@ -28,6 +28,7 @@ CHAT_INPUT_START = "chatview_input_start"
 CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_MODEL = "chatview_model"
 CHAT_PLAN_MODE = "chatview_plan_mode"
+CHAT_AGENT_PROVIDER = "chatview_agent_provider"
 CHAT_VIEW_NAME = "Chat View"
 PACKAGE_NAME = "ChatView"
 PROMPT_PREFIX = "\n❯ "
@@ -166,7 +167,7 @@ class AgentThread(threading.Thread):
 
     async def _agent_loop(self):
         """Main async loop for the agent."""
-        options = ClaudeAgentOptions(
+        options = AgentOptions(
             cwd=self.cwd,
             cli_path=self.cli_path,
             api_key=self.anthropic_config.get("ANTHROPIC_API_KEY"),
@@ -178,8 +179,11 @@ class AgentThread(threading.Thread):
             allowed_tools=self.anthropic_config.get("allowed_tools")
         )
 
+        agent_provider = self.anthropic_config.get("agent_provider", "claude")
+        AgentClass = CodexAgent if agent_provider == "codex" else ClaudeCodeAgent
+
         try:
-            async with ClaudeCodeAgent(options) as agent:
+            async with AgentClass(options) as agent:
                 self.agent = agent
 
                 # Create tasks for reading inputs and handling agent messages
@@ -295,7 +299,10 @@ class ModelPanel:
         input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
         region = sublime.Region(input_start, input_start)
 
-        model = self.window.settings().get(CHAT_MODEL) or "default"
+        agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+        model = self.window.settings().get(f"chatview_model_{agent_provider}") or "default"
+        # Keep the display key in sync
+        self.window.settings().set(CHAT_MODEL, model)
 
         plan_tag_html = ""
         if plan_mode == PlanMode.PLANNING:
@@ -801,6 +808,12 @@ class ChatMessageProcessor:
                     # local_output.tag is 'local-command-stdout'
                     self.append_content(local_output.text)
 
+            elif message.type == "tool_use":
+                if not self.last_is_tool_call:
+                    self.append_content("\n")
+                self.last_is_tool_call = True
+                self.append_content(self._format_tool_block(message.content) + "\n")
+
             elif message.type == "error":
                 self.append_error(message.content)
                 self.session.stop_loading()
@@ -809,6 +822,12 @@ class ChatMessageProcessor:
                 # Flush markdown formatter buffer
                 self.append_content("", flush=True)
                 # Stop loading on turn completion (heuristic)
+                self.session.stop_loading()
+                self.append_content("\n")
+
+            elif message.type == "stop":
+                # Codex agent sends "stop" when its process completes
+                self.append_content("", flush=True)
                 self.session.stop_loading()
                 self.append_content("\n")
 
@@ -918,19 +937,27 @@ class ChatSession:
 
         self.message_processor = ChatMessageProcessor(self)
 
-        # Load cli_path from settings
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
-        cli_path = settings.get("agent_command")
+
+        # Determine agent provider early
+        agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, settings.get("agent_provider", "claude"))
+
+        # Load cli_path from settings (provider-specific only, no fallback to avoid mixing CLIs)
+        cli_path = settings.get(f"{agent_provider}_command")
         if not cli_path:
-            cli_path = None
+            cli_path = None  # Let the agent class find its own CLI via shutil.which()
+
+        # Use provider-specific model key so switching agents won't carry over incompatible models
+        model = self.window.settings().get(f"chatview_model_{agent_provider}") or None
 
         anthropic_config = {
             "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
             "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
             "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
-            "model": self.window.settings().get(CHAT_MODEL),
+            "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
-            "allowed_tools": settings.get("allowed_tools")
+            "allowed_tools": settings.get("allowed_tools"),
+            "agent_provider": agent_provider
         }
 
         # Initialize background agent thread
@@ -1729,12 +1756,61 @@ class ChatViewSetModelTextHandler(sublime_plugin.TextInputHandler):
         return bool(text.strip())
 
 
+class ChatViewAgentProviderInputHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, current_agent=None):
+        self.current_agent = current_agent
+
+    def name(self):
+        return "agent"
+
+    def list_items(self):
+        items = [
+            ("claude: (Claude Code CLI by Anthropic)", "claude"),
+            ("codex: (Codex CLI by OpenAI)", "codex"),
+        ]
+
+        if self.current_agent:
+            for i, item in enumerate(items):
+                if item[1] == self.current_agent:
+                    items.insert(0, items.pop(i))
+                    break
+
+        return items
+
+    def placeholder(self):
+        return "Select agent provider"
+
+    def description(self, agent, text):
+        return f"Agent: {agent}"
+
+
+class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
+    """
+    Sets the agent provider for ChatView sessions in the current window.
+    """
+    def run(self, agent):
+        if agent:
+            self.window.settings().set(CHAT_AGENT_PROVIDER, agent)
+            sublime.status_message(f"ChatView agent provider set to: {agent}")
+
+            # Update settings and reload if needed (optional, depends on implementation)
+            # For now, we just update the setting which will be picked up on next session start
+
+    def input(self, args):
+        current_agent = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+        return ChatViewAgentProviderInputHandler(current_agent)
+
+
 class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
     """
     Sets the model for ChatView sessions in the current window.
     """
     def run(self, model):
         if model:
+            # Store model under provider-specific key
+            agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+            self.window.settings().set(f"chatview_model_{agent_provider}", model.strip())
+            # Also update the display key
             self.window.settings().set(CHAT_MODEL, model.strip())
             sublime.status_message(f"ChatView model set to: {model}")
 
