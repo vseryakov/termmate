@@ -28,7 +28,7 @@ CHAT_INPUT_START = "chatview_input_start"
 CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_MODEL = "chatview_model"
 CHAT_PLAN_MODE = "chatview_plan_mode"
-CHAT_AGENT_PROVIDER = "chatview_agent_provider"
+CHAT_AGENT = "chatview_agent_provider"
 CHAT_VIEW_NAME = "Chat View"
 PACKAGE_NAME = "ChatView"
 PROMPT_PREFIX = "\n❯ "
@@ -299,7 +299,7 @@ class ModelPanel:
         input_start = self.view.settings().get(CHAT_INPUT_START, self.view.size())
         region = sublime.Region(input_start, input_start)
 
-        agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+        agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
         model = self.window.settings().get(f"chatview_model_{agent_provider}") or "default"
         # Keep the display key in sync
         self.window.settings().set(CHAT_MODEL, model)
@@ -355,7 +355,12 @@ class ModelPanel:
                 }}
             </style>
             <div class="model-row">
-                <a href="set_model" class="model-tag">
+                <a href="set_agent" class="model-tag">
+                    <span class="icon">⏺</span>
+                    <span class="label">Agent:</span>
+                    <span class="value">{agent_provider}</span>
+                </a>
+                <a href="set_model" class="model-tag" style="margin-left: 8px;">
                     <span class="icon">✨</span>
                     <span class="label">Model:</span>
                     <span class="value">{model}</span>
@@ -365,7 +370,9 @@ class ModelPanel:
         """
 
         def on_navigate(href):
-            if href == "set_model":
+            if href == "set_agent":
+                self.window.run_command("chat_view_set_agent")
+            elif href == "set_model":
                 self.window.run_command("chat_view_set_model")
             elif href == "toggle_plan":
                 self.window.run_command("chat_view_toggle_plan_mode")
@@ -940,7 +947,7 @@ class ChatSession:
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
 
         # Determine agent provider early
-        agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, settings.get("agent_provider", "claude"))
+        agent_provider = self.window.settings().get(CHAT_AGENT, settings.get("agent_provider", "claude"))
 
         # Load cli_path from settings (provider-specific only, no fallback to avoid mixing CLIs)
         cli_path = settings.get(f"{agent_provider}_command")
@@ -1790,14 +1797,17 @@ class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
     """
     def run(self, agent):
         if agent:
-            self.window.settings().set(CHAT_AGENT_PROVIDER, agent)
+            self.window.settings().set(CHAT_AGENT, agent)
             sublime.status_message(f"ChatView agent provider set to: {agent}")
 
-            # Update settings and reload if needed (optional, depends on implementation)
-            # For now, we just update the setting which will be picked up on next session start
+            # Update the model phantom if session exists
+            window_id = self.window.id()
+            if window_id in chatview_clients:
+                session = chatview_clients[window_id]
+                session.model_phantom.update(plan_mode=session.plan_mode)
 
     def input(self, args):
-        current_agent = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+        current_agent = self.window.settings().get(CHAT_AGENT, "claude")
         return ChatViewAgentProviderInputHandler(current_agent)
 
 
@@ -1808,7 +1818,7 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
     def run(self, model):
         if model:
             # Store model under provider-specific key
-            agent_provider = self.window.settings().get(CHAT_AGENT_PROVIDER, "claude")
+            agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
             self.window.settings().set(f"chatview_model_{agent_provider}", model.strip())
             # Also update the display key
             self.window.settings().set(CHAT_MODEL, model.strip())
