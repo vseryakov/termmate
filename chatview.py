@@ -176,7 +176,8 @@ class AgentThread(threading.Thread):
             model=self.anthropic_config.get("model"),
             can_use_tool=getattr(self, 'agent_options_callback', None),
             plan_mode=self.anthropic_config.get("plan_mode", False),
-            allowed_tools=self.anthropic_config.get("allowed_tools")
+            allowed_tools=self.anthropic_config.get("allowed_tools"),
+            approve_mode=self.anthropic_config.get("approve_mode")
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
@@ -247,18 +248,23 @@ class AgentThread(threading.Thread):
 
     async def _send_permission_response(self, request_id, response_data):
         """Internal async method to send a permission response."""
-        response = {
-            "type": "control_response",
-            "response": {
-                "subtype": "success",
-                "request_id": request_id,
-                "response": response_data
+        if isinstance(self.agent, CodexAgent):
+            # Codex agent: route through its approval response handler
+            await self.agent.send_approval_response(request_id, response_data)
+        else:
+            # Claude agent: send control_response JSON
+            response = {
+                "type": "control_response",
+                "response": {
+                    "subtype": "success",
+                    "request_id": request_id,
+                    "response": response_data
+                }
             }
-        }
-        try:
-            await self.agent._write_json(response)
-        except Exception as e:
-            LOG.error(f"Failed to send permission response: {e}")
+            try:
+                await self.agent._write_json(response)
+            except Exception as e:
+                LOG.error(f"Failed to send permission response: {e}")
 
     def send_permission_response(self, request_id, response_data):
         """Schedule a permission response to be sent."""
@@ -964,7 +970,8 @@ class ChatSession:
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
-            "agent_provider": agent_provider
+            "agent_provider": agent_provider,
+            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
         }
 
         # Initialize background agent thread

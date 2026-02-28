@@ -51,6 +51,8 @@ class CodexAgent(BaseAgent):
         self._permission_callback: Optional[Callable] = self.options.can_use_tool
         # Track active turn so we know when it completes
         self._active_turn_id: Optional[str] = None
+        # Pending approval responses from the UI, keyed by approval_id
+        self._pending_approvals: Dict[str, asyncio.Future] = {}
 
         if not self.cli_path:
             raise FileNotFoundError(
@@ -85,6 +87,7 @@ class CodexAgent(BaseAgent):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            cwd=self.options.cwd,
         )
 
         self._is_connected = True
@@ -99,11 +102,23 @@ class CodexAgent(BaseAgent):
         await self._rpc_notify("initialized")
 
         # Create a thread
-        config = {"cwd": self.options.cwd}
+        thread_params = {"cwd": self.options.cwd}
         if self.options.model:
-            config["model"] = self.options.model
+            thread_params["model"] = self.options.model
+
+        # Map approve_mode to Codex approvalPolicy:
+        #   "untrusted"  — always ask for approval (commands + file changes)
+        #   "on-failure" — ask only when a command fails
+        #   "on-request" — ask only when the agent itself requests it
+        #   "never"      — never ask
+        approve_mode = self.options.approve_mode
+        if approve_mode == "accept-all":
+            thread_params["approvalPolicy"] = "never"
+        else:
+            # default / allow-edit → all operations require approval
+            thread_params["approvalPolicy"] = "untrusted"
+
         if self.options.sandbox_mode:
-            # Map simple string modes to sandbox object
             sandbox_map = {
                 "read-only": {"type": "readOnly"},
                 "workspace-write": {
@@ -113,13 +128,13 @@ class CodexAgent(BaseAgent):
                 },
                 "danger-full-access": {"type": "dangerFullAccess"},
             }
-            config["sandbox"] = sandbox_map.get(self.options.sandbox_mode, {
+            thread_params["sandbox"] = sandbox_map.get(self.options.sandbox_mode, {
                 "type": "workspaceWrite",
                 "writableRoots": [],
                 "networkAccess": False,
             })
 
-        result = await self._rpc_request("thread/start", {"config": config})
+        result = await self._rpc_request("thread/start", thread_params)
         if result and isinstance(result, dict):
             thread = result.get("thread", {})
             self.thread_id = thread.get("id")
@@ -140,19 +155,9 @@ class CodexAgent(BaseAgent):
             "input": [{"type": "text", "text": content}],
         })
 
-    async def respond_approval(self, approval_id: str, approved: bool) -> None:
-        """Respond to a command execution approval request."""
-        await self._rpc_request("approval/respondCommandExecution", {
-            "approvalId": approval_id,
-            "approved": approved,
-        })
-
-    async def respond_file_approval(self, approval_id: str, approved: bool) -> None:
-        """Respond to a file change approval request."""
-        await self._rpc_request("approval/respondFileChange", {
-            "approvalId": approval_id,
-            "approved": approved,
-        })
+    async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
+        """Send a JSON-RPC response to a server-initiated request."""
+        await self._write_json({"id": request_id, "result": result})
 
     async def _write_json(self, data: Dict[str, Any]) -> None:
         if not self._process or not self._process.stdin:
@@ -277,10 +282,11 @@ class CodexAgent(BaseAgent):
             await self._handle_item_started(params)
 
         elif method == "item/commandExecution/requestApproval":
-            await self._handle_command_approval(params)
+            # Run in a separate task to avoid blocking the message reader
+            asyncio.create_task(self._handle_command_approval(data["id"], params))
 
         elif method == "item/fileChange/requestApproval":
-            await self._handle_file_approval(params)
+            asyncio.create_task(self._handle_file_approval(data["id"], params))
 
         elif method == "codex/event/error" or method == "error":
             msg = params.get("msg", {})
@@ -368,52 +374,70 @@ class CodexAgent(BaseAgent):
                     Message(MessageType.THINKING.value, content=text, msg_id=item.get("id"))
                 )
 
-    async def _handle_command_approval(self, params: Dict[str, Any]) -> None:
+    async def send_approval_response(self, approval_id: str, response_data: Dict[str, Any]) -> None:
+        """
+        Called by the UI to respond to an approval request.
+        Routes to the pending future so the approval handler can complete.
+        """
+        future = self._pending_approvals.get(approval_id)
+        if future and not future.done():
+            future.set_result(response_data)
+
+    async def _handle_command_approval(self, request_id: Any, params: Dict[str, Any]) -> None:
         """Handle a command execution approval request."""
-        approval_id = params.get("approvalId")
+        approval_id = str(request_id)
         command = params.get("command", "")
         cwd = params.get("cwd", "")
 
-        LOG.info(f"Approval request [{approval_id}]: {command} in {cwd}")
+        LOG.info(f"Command approval request [rpc_id={request_id}]: {command} in {cwd}")
 
-        if self._permission_callback:
-            context = ToolPermissionContext()
-            try:
-                result = await self._permission_callback(
-                    "command_execution",
-                    {"command": command, "cwd": cwd, "approvalId": approval_id},
-                    context,
-                )
-                approved = isinstance(result, PermissionResultAllow)
-                await self.respond_approval(approval_id, approved)
-            except Exception as e:
-                LOG.error(f"Permission callback error: {e}")
-                await self.respond_approval(approval_id, False)
-        else:
-            # No callback: auto-approve (matching old exec behavior)
-            await self.respond_approval(approval_id, True)
+        input_data = {"command": command, "cwd": cwd}
+        approved = await self._emit_approval_request(approval_id, "command_execution", input_data)
+        decision = "accept" if approved else "decline"
+        await self._respond_to_server_request(request_id, {"decision": decision})
 
-    async def _handle_file_approval(self, params: Dict[str, Any]) -> None:
+    async def _handle_file_approval(self, request_id: Any, params: Dict[str, Any]) -> None:
         """Handle a file change approval request."""
-        approval_id = params.get("approvalId")
+        approval_id = str(request_id)
 
-        LOG.info(f"File approval request [{approval_id}]")
+        LOG.info(f"File approval request [rpc_id={request_id}]")
 
-        if self._permission_callback:
-            context = ToolPermissionContext()
-            try:
-                result = await self._permission_callback(
-                    "file_change",
-                    {"approvalId": approval_id, **params},
-                    context,
-                )
-                approved = isinstance(result, PermissionResultAllow)
-                await self.respond_file_approval(approval_id, approved)
-            except Exception as e:
-                LOG.error(f"Permission callback error: {e}")
-                await self.respond_file_approval(approval_id, False)
-        else:
-            await self.respond_file_approval(approval_id, True)
+        input_data = {**params}
+        approved = await self._emit_approval_request(approval_id, "file_change", input_data)
+        decision = "accept" if approved else "decline"
+        await self._respond_to_server_request(request_id, {"decision": decision})
+
+    async def _emit_approval_request(self, approval_id: str, tool_name: str, input_data: Dict[str, Any]) -> bool:
+        """
+        Emit a control_request message to the message queue and wait for
+        the UI to respond via send_approval_response().
+        Returns True if approved, False if denied.
+        """
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        self._pending_approvals[approval_id] = future
+
+        # Emit control_request in the same format as Claude agent
+        control_msg = Message(
+            "control_request",
+            content={
+                "request_id": approval_id,
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": tool_name,
+                    "input": input_data,
+                },
+            },
+        )
+        await self._message_queue.put(control_msg)
+
+        try:
+            response_data = await future
+        except asyncio.CancelledError:
+            response_data = {"behavior": "deny"}
+        finally:
+            self._pending_approvals.pop(approval_id, None)
+
+        return response_data.get("behavior") == "allow"
 
     async def receive_messages(self) -> AsyncIterator[Message]:
         """
@@ -453,6 +477,12 @@ class CodexAgent(BaseAgent):
             if not future.done():
                 future.cancel()
         self._pending_responses.clear()
+
+        # Cancel pending approval futures
+        for future in self._pending_approvals.values():
+            if not future.done():
+                future.cancel()
+        self._pending_approvals.clear()
 
         # Terminate process
         if self._process and self._process.returncode is None:

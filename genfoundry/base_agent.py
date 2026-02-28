@@ -87,7 +87,8 @@ class AgentOptions:
         can_use_tool: Optional[Callable] = None,
         plan_mode: bool = False,
         # Codex specific options can be added here
-        sandbox_mode: Optional[str] = None
+        sandbox_mode: Optional[str] = None,
+        approve_mode: Optional[str] = None
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -103,6 +104,7 @@ class AgentOptions:
         self.can_use_tool = can_use_tool
         self.plan_mode = plan_mode
         self.sandbox_mode = sandbox_mode
+        self.approve_mode = approve_mode
 
 
 class BaseAgent(abc.ABC):
