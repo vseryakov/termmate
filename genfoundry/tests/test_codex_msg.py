@@ -1,0 +1,184 @@
+"""
+Test CodexAgent two-turn conversation.
+
+Mocks the codex app-server subprocess to verify that CodexAgent can
+send two rounds of messages and receive the expected responses.
+"""
+
+import asyncio
+import json
+import sys
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from genfoundry.codex_agent import CodexAgent
+from genfoundry.base_agent import AgentOptions, MessageType
+
+
+class FakeProcess:
+    """Simulates a codex app-server subprocess with scripted JSON-RPC responses."""
+
+    def __init__(self):
+        self.stdin = MagicMock()
+        self.stdin.write = MagicMock()
+        self.stdin.drain = AsyncMock()
+        self.returncode = None
+
+        self._stdout_lines: list[bytes] = []
+        self._stdout_index = 0
+
+        self.stdout = self
+        self.stderr = self
+
+    def feed(self, data: dict) -> None:
+        self._stdout_lines.append(json.dumps(data).encode() + b"\n")
+
+    async def read(self, n: int) -> bytes:
+        while self._stdout_index >= len(self._stdout_lines):
+            await asyncio.sleep(0.01)
+        line = self._stdout_lines[self._stdout_index]
+        self._stdout_index += 1
+        return line
+
+    async def readline(self) -> bytes:
+        # stderr: never produces output
+        await asyncio.sleep(10)
+        return b""
+
+    def terminate(self):
+        self.returncode = 0
+
+    def kill(self):
+        self.returncode = -9
+
+    async def wait(self):
+        pass
+
+
+class TestCodexTwoTurns(unittest.IsolatedAsyncioTestCase):
+
+    async def _create_agent(self, fake_proc: FakeProcess) -> CodexAgent:
+        """Create a CodexAgent with a fake subprocess."""
+        opts = AgentOptions(cli_path="/usr/bin/true")
+        agent = CodexAgent(options=opts)
+
+        # Intercept _write_json to capture outgoing requests and auto-reply
+        original_write = agent._write_json
+        self._rpc_calls: list[dict] = []
+
+        async def mock_write_json(data: dict):
+            self._rpc_calls.append(data)
+            await original_write(data)
+
+            # Auto-reply to JSON-RPC requests (those with an 'id')
+            if "id" in data:
+                method = data.get("method", "")
+                rid = data["id"]
+                if method == "initialize":
+                    fake_proc.feed({"id": rid, "result": {"capabilities": {}}})
+                elif method == "thread/start":
+                    fake_proc.feed({"id": rid, "result": {"thread": {"id": "thread-001"}}})
+                elif method == "turn/start":
+                    turn_id = f"turn-{rid}"
+                    fake_proc.feed({"id": rid, "result": {}})
+                    # Simulate agent response events
+                    fake_proc.feed({"method": "turn/started", "params": {"turnId": turn_id}})
+                    fake_proc.feed({
+                        "method": "item/agentMessage/delta",
+                        "params": {"itemId": f"msg-{rid}", "delta": f"Reply to turn {rid}"},
+                    })
+                    fake_proc.feed({
+                        "method": "item/completed",
+                        "params": {
+                            "item": {
+                                "type": "agentMessage",
+                                "id": f"msg-{rid}",
+                                "text": f"Reply to turn {rid}",
+                            }
+                        },
+                    })
+                    fake_proc.feed({"method": "turn/completed", "params": {"turnId": turn_id}})
+
+        agent._write_json = mock_write_json
+
+        # Patch create_subprocess_exec to return our fake process
+        with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+            await agent.connect()
+
+        return agent
+
+    async def _collect_turn(self, agent: CodexAgent) -> list:
+        """Collect messages from receive_messages until STOP."""
+        messages = []
+        async for msg in agent.receive_messages():
+            messages.append(msg)
+            if getattr(msg, "type", None) == MessageType.STOP.value:
+                break
+        return messages
+
+    async def test_two_turn_conversation(self):
+        """Verify that sending two messages produces two separate turn responses."""
+        fake_proc = FakeProcess()
+        agent = await self._create_agent(fake_proc)
+
+        try:
+            # --- Turn 1 ---
+            await agent.send_message("Hello, first message")
+            msgs1 = await self._collect_turn(agent)
+
+            text_msgs1 = [m for m in msgs1 if getattr(m, "type", None) == MessageType.TEXT.value]
+            stop_msgs1 = [m for m in msgs1 if getattr(m, "type", None) == MessageType.STOP.value]
+
+            self.assertTrue(len(text_msgs1) > 0, "Turn 1 should have at least one text message")
+            self.assertEqual(len(stop_msgs1), 1, "Turn 1 should have exactly one STOP")
+            self.assertIn("Reply to turn", text_msgs1[0].content)
+
+            # --- Turn 2 ---
+            await agent.send_message("Hello, second message")
+            msgs2 = await self._collect_turn(agent)
+
+            text_msgs2 = [m for m in msgs2 if getattr(m, "type", None) == MessageType.TEXT.value]
+            stop_msgs2 = [m for m in msgs2 if getattr(m, "type", None) == MessageType.STOP.value]
+
+            self.assertTrue(len(text_msgs2) > 0, "Turn 2 should have at least one text message")
+            self.assertEqual(len(stop_msgs2), 1, "Turn 2 should have exactly one STOP")
+            self.assertIn("Reply to turn", text_msgs2[0].content)
+
+            # Verify it's a different reply (different RPC id)
+            self.assertNotEqual(text_msgs1[0].content, text_msgs2[0].content,
+                                "Two turns should produce different replies")
+
+            # Verify thread was reused
+            self.assertEqual(agent.thread_id, "thread-001")
+
+        finally:
+            await agent.disconnect()
+
+    async def test_thread_id_persists_across_turns(self):
+        """Verify thread_id stays the same for both turns."""
+        fake_proc = FakeProcess()
+        agent = await self._create_agent(fake_proc)
+
+        try:
+            tid_before = agent.thread_id
+            self.assertEqual(tid_before, "thread-001")
+
+            await agent.send_message("First")
+            await self._collect_turn(agent)
+
+            self.assertEqual(agent.thread_id, tid_before)
+
+            await agent.send_message("Second")
+            await self._collect_turn(agent)
+
+            self.assertEqual(agent.thread_id, tid_before)
+
+        finally:
+            await agent.disconnect()
+
+
+if __name__ == "__main__":
+    unittest.main()
