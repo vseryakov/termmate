@@ -890,6 +890,12 @@ class ChatMessageProcessor:
                         if models:
                             self.session.available_models = models
 
+            elif message.type == "models_update":
+                if hasattr(message, "content") and isinstance(message.content, dict):
+                    models = message.content.get("models", [])
+                    if models:
+                        self.session.available_models = models
+
     def _format_tool_block(self, block):
         """Format a tool use block into a string."""
         name = block.get("name")

@@ -70,6 +70,7 @@ class CodexAgent(BaseAgent):
         self.thread_id: Optional[str] = None
         self.cli_path = self.options.cli_path or shutil.which("codex") or _find_codex_cli()
         self._is_connected = False
+        self.available_models: List[Dict[str, Any]] = []
 
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._process: Optional[asyncio.subprocess.Process] = None
@@ -91,6 +92,31 @@ class CodexAgent(BaseAgent):
                 "Codex CLI not found in PATH. Please install it or set 'codex_command' in settings."
             )
         LOG.info(f"Codex CLI path: {self.cli_path}")
+
+    async def _fetch_models(self) -> None:
+        """Fetch available models via the model/list RPC method."""
+        try:
+            result = await self._rpc_request("model/list", {})
+            if not result or not isinstance(result, dict):
+                return
+            models = [
+                {
+                    "displayName": m.get("displayName") or m.get("id", ""),
+                    "description": m.get("description", ""),
+                    "value": m.get("id", ""),
+                }
+                for m in result.get("data", [])
+                if m.get("id") and not m.get("hidden", False)
+            ]
+            if models:
+                self.available_models = models
+                LOG.info(f"Fetched {len(models)} models via model/list RPC")
+                await self._message_queue.put(Message(
+                    "models_update",
+                    content={"models": models},
+                ))
+        except Exception as e:
+            LOG.warning(f"Failed to fetch models via model/list: {e}")
 
     def _next_id(self) -> int:
         self._rpc_id += 1
@@ -132,6 +158,9 @@ class CodexAgent(BaseAgent):
             "capabilities": {"experimentalApi": True}
         })
         await self._rpc_notify("initialized")
+
+        # Fetch available models via model/list RPC (no API key required)
+        asyncio.create_task(self._fetch_models())
 
         # Create a thread
         thread_params = {"cwd": self.options.cwd}
