@@ -261,8 +261,6 @@ class CodexAgent(BaseAgent):
         method = data.get("method", "")
         params = data.get("params", {})
 
-        LOG.debug(f"codex event: {method}")
-
         if method == "turn/started":
             self._active_turn_id = params.get("turnId")
 
@@ -345,11 +343,19 @@ class CodexAgent(BaseAgent):
             await self._message_queue.put(tool_msg)
 
         elif item_type == "fileChange":
+            changes = item.get("changes", [])
+            filenames = []
+            for c in changes:
+                path = c.get("path")
+                if path:
+                    filenames.append(os.path.basename(path))
+
             tool_msg = Message(
                 MessageType.TOOL_USE.value,
                 content={
                     "name": "file_change",
-                    "changes": item.get("changes", []),
+                    "changes": changes,
+                    "filenames": filenames,
                     "status": item.get("status"),
                 },
                 msg_id=item.get("id"),
@@ -399,7 +405,7 @@ class CodexAgent(BaseAgent):
 
         LOG.info(f"Command approval request [rpc_id={request_id}]: {command} in {cwd}")
 
-        input_data = {"command": command, "cwd": cwd}
+        input_data = {"command": command}
         approved = await self._emit_approval_request(approval_id, "command_execution", input_data)
         decision = "accept" if approved else "decline"
         await self._respond_to_server_request(request_id, {"decision": decision})

@@ -941,6 +941,16 @@ class ChatMessageProcessor:
             query = input_data.get("query", "")
             if query:
                 return f"⏺ WebSearch ({query})"
+        elif name == "command_execution":
+            command = block.get("command", "")
+            if command:
+                return f"⏺ command ({command})"
+            return "⏺ command"
+        elif name == "file_change":
+            filenames = block.get("filenames", [])
+            if filenames:
+                return f"⏺ file_change ({', '.join(filenames)})"
+            return "⏺ file_change"
         else:
             return f"⏺ {name}" if name else ""
 
