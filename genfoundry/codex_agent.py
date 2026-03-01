@@ -21,6 +21,35 @@ from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent
 
 
+def _find_codex_cli() -> Optional[str]:
+    """Search common default install locations for the codex CLI."""
+    candidates = []
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        candidates = [
+            os.path.join(appdata, "npm", "codex.cmd"),
+            os.path.join(appdata, "npm", "codex"),
+            os.path.join(local_appdata, "Programs", "codex", "codex.exe"),
+            os.path.join(local_appdata, "Programs", "codex", "codex.cmd"),
+        ]
+    else:
+        home = os.path.expanduser("~")
+        candidates = [
+            os.path.join(home, ".local", "bin", "codex"),
+            os.path.join(home, ".npm-global", "bin", "codex"),
+            os.path.join(home, ".yarn", "bin", "codex"),
+            "/usr/local/bin/codex",
+            "/opt/homebrew/bin/codex",           # macOS (Intel/Apple Silicon)
+            "/home/linuxbrew/.linuxbrew/bin/codex",  # Linux Homebrew
+        ]
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            LOG.info(f"Found codex CLI at default location: {path}")
+            return path
+    return None
+
+
 class CodexAgent(BaseAgent):
     """
     Client for interacting with Codex via "codex app-server" (JSON-RPC over stdio).
@@ -39,7 +68,7 @@ class CodexAgent(BaseAgent):
     def __init__(self, options: Optional[AgentOptions] = None):
         super().__init__(options)
         self.thread_id: Optional[str] = None
-        self.cli_path = self.options.cli_path or shutil.which("codex")
+        self.cli_path = self.options.cli_path or shutil.which("codex") or _find_codex_cli()
         self._is_connected = False
 
         self._message_queue: asyncio.Queue = asyncio.Queue()

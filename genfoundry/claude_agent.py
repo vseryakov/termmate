@@ -21,6 +21,36 @@ LOG = logging.getLogger(__package__)
 from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent
 
+
+def _find_claude_cli() -> Optional[str]:
+    """Search common default install locations for the claude CLI."""
+    candidates = []
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        candidates = [
+            os.path.join(appdata, "npm", "claude.cmd"),
+            os.path.join(appdata, "npm", "claude"),
+            os.path.join(local_appdata, "Programs", "claude", "claude.exe"),
+            os.path.join(local_appdata, "Programs", "claude", "claude.cmd"),
+        ]
+    else:
+        home = os.path.expanduser("~")
+        candidates = [
+            os.path.join(home, ".local", "bin", "claude"),
+            os.path.join(home, ".npm-global", "bin", "claude"),
+            os.path.join(home, ".yarn", "bin", "claude"),
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",           # macOS (Intel/Apple Silicon)
+            "/home/linuxbrew/.linuxbrew/bin/claude",  # Linux Homebrew
+        ]
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            LOG.info(f"Found claude CLI at default location: {path}")
+            return path
+    return None
+
+
 class ClaudeCodeAgent(BaseAgent):
     """
     Client for bidirectional, interactive conversations with Claude Code.
@@ -46,7 +76,7 @@ class ClaudeCodeAgent(BaseAgent):
         self._permission_callback = self.options.can_use_tool
 
         # Find claude executable
-        self.cli_path = self.options.cli_path or shutil.which("claude")
+        self.cli_path = self.options.cli_path or shutil.which("claude") or _find_claude_cli()
         if not self.cli_path:
             raise FileNotFoundError(
                 "Claude CLI not found. Please install it first:\n"

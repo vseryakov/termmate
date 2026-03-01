@@ -6,7 +6,6 @@
     // List of tools to use without confirmation.
     "allowed_tools": ["Read", "Glob", "Grep", "TodoWrite", "WebFetch", "WebSearch", "Skill"],
     // Path or command name for the coding CLI executable.
-    "agent_command": "",
     "claude_command": "",
     "codex_command": ""
 }
