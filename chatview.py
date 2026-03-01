@@ -432,6 +432,15 @@ class PermissionPanel:
         # Scroll to bottom to show request
         self.view.show(self.view.size())
 
+    @staticmethod
+    def _html_escape(text):
+        """Escape HTML special characters in text."""
+        return (text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;"))
+
     def _prepare_display_content(self, request_id, tool_name, input_data):
         """Prepare the display content for a permission request."""
         if tool_name == "Edit":
@@ -474,13 +483,41 @@ class PermissionPanel:
             name = os.path.basename(file_path) if file_path else "new_file"
             self.diff_data[request_id] = (old_text, new_text, name)
             return f'📄 <a href="show_diff" class="file-link">{name}</a>'
+        elif tool_name == "command_execution":
+            command = input_data.get("command", "")
+            cwd = input_data.get("cwd", "")
+            display = self._html_escape(command)
+            if cwd:
+                display += f'\n<span style="opacity:0.6">cwd: {self._html_escape(cwd)}</span>'
+            return display
+
+        elif tool_name == "file_change":
+            processed_diff = input_data.get("processed_diff")
+            if not processed_diff:
+                return f"<b>{tool_name}</b> (no changes)"
+
+            old_text = processed_diff.get("old_text", "")
+            new_text = processed_diff.get("new_text", "")
+            display_name = processed_diff.get("display_name", "file")
+            self.diff_data[request_id] = (old_text, new_text, display_name)
+
+            files = processed_diff.get("files", [])
+            count = processed_diff.get("count", 1)
+            summary = f'📄 <a href="show_diff" class="file-link">{self._html_escape(display_name)}</a>'
+            if count > 1:
+                limit = 5
+                details = "<br>".join([f"&nbsp;&nbsp;- {self._html_escape(f)}" for f in files[:limit]])
+                if len(files) > limit:
+                    details += f"<br>&nbsp;&nbsp;- ... and {len(files) - limit} more"
+                return f"{summary}<br>{details}"
+            return summary
 
         else:
             # Format input data line by line
             display_lines = []
             for k, v in input_data.items():
                 if isinstance(v, str):
-                    display_lines.append(f"{k}: {v}")
+                    display_lines.append(f"{self._html_escape(k)}: {self._html_escape(v)}")
             return "\n".join(display_lines)
 
     def _build_html(self, request_id, tool_name, display_content, has_diff, approve_mode=None):

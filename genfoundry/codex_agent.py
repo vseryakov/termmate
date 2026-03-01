@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import logging
+import re
 from typing import Optional, Dict, Any, AsyncIterator, List, Callable, Union
 
 LOG = logging.getLogger(__package__)
@@ -53,6 +54,8 @@ class CodexAgent(BaseAgent):
         self._active_turn_id: Optional[str] = None
         # Pending approval responses from the UI, keyed by approval_id
         self._pending_approvals: Dict[str, asyncio.Future] = {}
+        # Cache item data from item/started, keyed by itemId
+        self._item_cache: Dict[str, Dict[str, Any]] = {}
 
         if not self.cli_path:
             raise FileNotFoundError(
@@ -299,6 +302,11 @@ class CodexAgent(BaseAgent):
         item = params.get("item", {})
         item_type = item.get("type")
 
+        # Cache item data so requestApproval handlers can look it up by itemId
+        item_id = item.get("id")
+        if item_id:
+            self._item_cache[item_id] = item
+
         if item_type == "commandExecution":
             tool_msg = Message(
                 MessageType.TOOL_USE.value,
@@ -402,10 +410,156 @@ class CodexAgent(BaseAgent):
 
         LOG.info(f"File approval request [rpc_id={request_id}]")
 
+        # requestApproval params only contain threadId/turnId/itemId, not the changes.
+        # Look up the item data cached from the preceding item/started event.
+        item_id = params.get("itemId")
+        item_data = self._item_cache.get(item_id, {}) if item_id else {}
+
+        # Pre-process diff data for the UI using the cached item's changes
+        processed_diff = self._generate_file_change_diff(item_data)
+
         input_data = {**params}
+        if processed_diff:
+            input_data["processed_diff"] = processed_diff
+
         approved = await self._emit_approval_request(approval_id, "file_change", input_data)
         decision = "accept" if approved else "decline"
         await self._respond_to_server_request(request_id, {"decision": decision})
+
+    def _generate_file_change_diff(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Processes Codex file change parameters and generates combined diff data.
+        Returns a dict with { 'old_text', 'new_text', 'display_name' } or None.
+        """
+        changes = params.get("changes", [])
+        if not changes and "fileChanges" in params:
+            # Convert dict to list for uniform processing
+            file_changes = params.get("fileChanges", {})
+            if isinstance(file_changes, dict):
+                for path, change in file_changes.items():
+                    if isinstance(change, dict):
+                        change_copy = change.copy()
+                        change_copy["path"] = path
+                        changes.append(change_copy)
+
+        if not changes:
+            return None
+
+        old_full_text = ""
+        new_full_text = ""
+
+        for change in changes:
+            path = change.get("path", "")
+            # Codex uses {"kind": {"type": "update"}} while other formats use top-level "type"
+            kind = change.get("kind", {})
+            change_type = (kind.get("type") if isinstance(kind, dict) else None) or change.get("type", "update")
+            # Codex uses "diff" field name; also support "patch" and "unified_diff"
+            patch = change.get("diff") or change.get("patch") or change.get("unified_diff")
+            content = change.get("content", "")
+
+            if not path:
+                continue
+
+            # Read old content
+            old_text = ""
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        old_text = f.read()
+                except Exception:
+                    pass
+
+            new_text = old_text
+            # Logic for deriving new_text
+            if change_type in ("add", "create"):
+                new_text = content or ""
+            elif change_type == "delete":
+                new_text = ""
+            else: # update/edit
+                if patch:
+                    new_text = self._apply_patch(old_text, patch)
+                elif content: # Full content overwrite
+                    new_text = content
+
+            # Combine into full diff if multiple files
+            if len(changes) > 1:
+                header = f"File: {path}\n" + "="*40 + "\n"
+                old_full_text += header + old_text + "\n\n"
+                new_full_text += header + new_text + "\n\n"
+            else:
+                old_full_text = old_text
+                new_full_text = new_text
+
+        display_name = os.path.basename(changes[0].get("path", "file"))
+        if len(changes) > 1:
+            display_name = f"{len(changes)} files"
+
+        return {
+            "old_text": old_full_text,
+            "new_text": new_full_text,
+            "display_name": display_name,
+            "count": len(changes),
+            "files": [os.path.basename(c.get('path', '')) for c in changes if c.get('path')]
+        }
+
+    def _apply_patch(self, old_text: str, patch: str) -> str:
+        """
+        Apply a unified diff patch to old_text.
+        Returns the modified text or original text if patch fails.
+        """
+        if not patch:
+            return old_text
+
+        lines = old_text.splitlines(keepends=True)
+        patch_lines = patch.splitlines(keepends=True)
+
+        # Simple hunk parsing: @@ -start,count +start,count @@
+        hunk_re = re.compile(r'^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@')
+
+        applied_lines = []
+        current_old_line = 0
+
+        i = 0
+        # Skip header lines if they exist (e.g. --- / +++)
+        while i < len(patch_lines) and not patch_lines[i].startswith('@@'):
+            i += 1
+
+        if i == len(patch_lines):
+            return old_text
+
+        while i < len(patch_lines):
+            line = patch_lines[i]
+            match = hunk_re.match(line)
+            if match:
+                try:
+                    old_start = int(match.group(1)) - 1 # 0-indexed
+                    while current_old_line < old_start and current_old_line < len(lines):
+                        applied_lines.append(lines[current_old_line])
+                        current_old_line += 1
+
+                    i += 1
+                    while i < len(patch_lines) and not patch_lines[i].startswith('@@'):
+                        p_line = patch_lines[i]
+                        if p_line.startswith(' '):
+                            if current_old_line < len(lines):
+                                applied_lines.append(lines[current_old_line])
+                                current_old_line += 1
+                        elif p_line.startswith('+'):
+                            applied_lines.append(p_line[1:])
+                        elif p_line.startswith('-'):
+                            current_old_line += 1
+                        i += 1
+                    continue
+                except Exception as e:
+                    LOG.error(f"Error applying diff hunk: {e}")
+                    return old_text
+            i += 1
+
+        while current_old_line < len(lines):
+            applied_lines.append(lines[current_old_line])
+            current_old_line += 1
+
+        return "".join(applied_lines)
 
     async def _emit_approval_request(self, approval_id: str, tool_name: str, input_data: Dict[str, Any]) -> bool:
         """
