@@ -1244,6 +1244,40 @@ class ChatSession:
         # Reset the agent (disconnect and reconnect)
         self.agent_thread.reset()
 
+    def switch_agent(self, new_agent_provider):
+        """Stop the current agent thread and start a new one with the given provider."""
+        self.stop_loading()
+        self.session_allow_all = False
+
+        if self.agent_thread:
+            self.agent_thread.stop()
+            self.agent_thread = None
+
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        cli_path = settings.get(f"{new_agent_provider}_command") or None
+        model = self.window.settings().get(f"chatview_model_{new_agent_provider}") or None
+
+        anthropic_config = {
+            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
+            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
+            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
+            "model": model,
+            "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
+            "allowed_tools": settings.get("allowed_tools"),
+            "agent_provider": new_agent_provider,
+            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
+        }
+
+        cwd = get_best_dir(self.chat_view)
+        self.agent_thread = AgentThread(
+            cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
+        )
+        self.agent_thread.start()
+        LOG.info(f"Switched agent to: {new_agent_provider}")
+
+        switch_msg = f"\n\n[Switched agent to: {new_agent_provider}]\n\n"
+        self.chat_view.run_command("chat_output_append", {"text": switch_msg})
+
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
     """
@@ -1922,13 +1956,15 @@ class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
     """
     def run(self, agent):
         if agent:
+            current_agent = self.window.settings().get(CHAT_AGENT, "claude")
             self.window.settings().set(CHAT_AGENT, agent)
             sublime.status_message(f"ChatView agent provider set to: {agent}")
 
-            # Update the model phantom if session exists
             window_id = self.window.id()
             if window_id in chatview_clients:
                 session = chatview_clients[window_id]
+                if agent != current_agent:
+                    session.switch_agent(agent)
                 session.model_phantom.update(plan_mode=session.plan_mode)
 
     def input(self, args):
