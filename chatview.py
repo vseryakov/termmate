@@ -362,12 +362,11 @@ class ModelPanel:
             </style>
             <div class="model-row">
                 <a href="set_agent" class="model-tag">
-                    <span class="icon">⏺</span>
+                    <span class="icon">✨</span>
                     <span class="label">Agent:</span>
                     <span class="value">{agent_provider}</span>
                 </a>
                 <a href="set_model" class="model-tag" style="margin-left: 8px;">
-                    <span class="icon">✨</span>
                     <span class="label">Model:</span>
                     <span class="value">{model}</span>
                 </a>{plan_tag_html}
