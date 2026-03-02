@@ -819,6 +819,7 @@ class ChatMessageProcessor:
         self.session = session
         self.markdown_formatter = plugin.MarkdownFormatter()
         self.last_is_tool_call = False
+        self._plan_text = ""
 
     def handle_message(self, message):
         """Dispatch agent message to appropriate handler."""
@@ -906,11 +907,29 @@ class ChatMessageProcessor:
                 self.session.stop_loading()
                 self.append_content("\n")
 
+            elif message.type == "plan_delta":
+                # Codex plan mode: accumulate <proposed_plan> content
+                content = message.content if isinstance(message.content, str) else ""
+                if content:
+                    self._plan_text += content
+
             elif message.type == "stop":
                 # Codex agent sends "stop" when its process completes
                 self.append_content("", flush=True)
                 self.session.stop_loading()
                 self.append_content("\n")
+                # If Codex plan mode produced a plan, open it in a new view
+                if self._plan_text:
+                    plan_text = self._plan_text
+                    self._plan_text = ""
+                    def open_plan(pt=plan_text):
+                        plan_view = self.session.window.new_file()
+                        plan_view.set_name("Implementation Plan")
+                        plan_view.run_command("append", {"characters": pt})
+                        plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+                        plan_view.set_scratch(True)
+                    sublime.set_timeout(open_plan, 0)
+                    self.append_content("[Plan generated — see Implementation Plan tab]\n")
 
             elif message.type == "control_response":
                 if hasattr(message, "content") and isinstance(message.content, dict):
@@ -1183,6 +1202,7 @@ class ChatSession:
         """Start animation and send to agent."""
         if region:
             self.add_prompt_highlight(region)
+        self.message_processor._plan_text = ""
         self.agent_thread.send(user_input)
 
     def add_prompt_highlight(self, region):

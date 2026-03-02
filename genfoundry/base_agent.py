@@ -14,6 +14,7 @@ class MessageType(Enum):
     ERROR = "error"
     STOP = "stop"
     THINKING = "thinking"
+    PLAN_DELTA = "plan_delta"
 
 class Message:
     """Represents a message from an Agent"""

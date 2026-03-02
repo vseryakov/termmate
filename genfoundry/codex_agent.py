@@ -50,6 +50,7 @@ def _find_codex_cli() -> Optional[str]:
     return None
 
 
+
 class CodexAgent(BaseAgent):
     """
     Client for interacting with Codex via "codex app-server" (JSON-RPC over stdio).
@@ -86,6 +87,10 @@ class CodexAgent(BaseAgent):
         self._pending_approvals: Dict[str, asyncio.Future] = {}
         # Cache item data from item/started, keyed by itemId
         self._item_cache: Dict[str, Dict[str, Any]] = {}
+        # Plan mode: mutable at runtime (separate from options.plan_mode snapshot)
+        self.plan_mode: bool = self.options.plan_mode
+        # Accumulates item/plan/delta content in plan mode
+        self._plan_text: str = ""
 
         if not self.cli_path:
             raise FileNotFoundError(
@@ -216,12 +221,21 @@ class CodexAgent(BaseAgent):
         if not self.thread_id:
             raise RuntimeError("No active thread. Call connect() first.")
 
+        self._plan_text = ""
         params: Dict[str, Any] = {
             "threadId": self.thread_id,
             "input": [{"type": "text", "text": content}],
         }
         if self.options.model:
             params["model"] = self.options.model
+        if self.plan_mode:
+            params["collaborationMode"] = {
+                "mode": "plan",
+                "settings": {
+                    "model": self.options.model,
+                    "developer_instructions": None,
+                },
+            }
 
         await self._rpc_request("turn/start", params)
 
@@ -333,7 +347,17 @@ class CodexAgent(BaseAgent):
 
         elif method == "turn/completed":
             self._active_turn_id = None
+            if self.plan_mode and self._plan_text:
+                await self._message_queue.put(
+                    Message(MessageType.PLAN_DELTA.value, content=self._plan_text)
+                )
+                self._plan_text = ""
             await self._message_queue.put(Message(MessageType.STOP.value))
+
+        elif method == "item/plan/delta":
+            delta = params.get("delta", "")
+            if delta:
+                self._plan_text += delta
 
         elif method == "item/agentMessage/delta":
             delta = params.get("delta", "")
