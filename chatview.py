@@ -1095,6 +1095,11 @@ class ChatSession:
 
         approve_mode = self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
 
+        always_confirm_tools = ("ExitPlanMode",)
+        if tool_name in always_confirm_tools:
+            self.permission_panel.show(request_id, tool_name, input_data, approve_mode=approve_mode)
+            return
+
         if approve_mode == ApproveMode.ACCEPT_ALL.value:
             self._auto_approve(request_id, input_data)
             return
