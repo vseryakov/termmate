@@ -1795,12 +1795,7 @@ class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
                         for m in session.available_models
                     ]
 
-        # Fallback to default options if no models available yet
-        return [
-            ("Default (recommended)", "default"),
-            ("Opus - Most capable", "opus"),
-            ("Haiku - Fastest", "haiku")
-        ]
+        return []
 
     def placeholder(self):
         return "Select a model"
