@@ -56,6 +56,38 @@ def plugin_loaded():
     """
     settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
     plugin.update_log_level(settings)
+    # Defer scan to allow ST to finish restoring all scratch views
+    sublime.set_timeout(_restore_chat_sessions, 500)
+
+
+def _restore_chat_sessions():
+    """Scan all windows for orphaned chat views and reconnect their agents."""
+    for window in sublime.windows():
+        for view in window.views():
+            if (view.settings().get(CHAT_VIEW_FLAG, False) and
+                    window.id() not in chatview_clients):
+                _reconnect_chat_view(view)
+
+
+def _reconnect_chat_view(view):
+    """
+    Reconnect an existing chat view to a new ChatSession after a restart.
+    Appends a reconnection notice, but does not redraw historical phantoms.
+    """
+    window = view.window()
+    if not window:
+        return
+    window_id = window.id()
+    if window_id in chatview_clients:
+        return
+
+    cwd = get_best_dir(view)
+    session = ChatSession(window, view, cwd)
+    chatview_clients[window_id] = session
+    # Restore the model phantom at the existing CHAT_INPUT_START position
+    session.model_phantom.update(plan_mode=session.plan_mode)
+    view.run_command("chat_output_append", {"text": "\n\n[Reconnected after restart]\n"})
+    LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}")
 
 
 def get_best_dir(view):
@@ -1197,6 +1229,9 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         for view in self.window.views():
             if view.settings().get(CHAT_VIEW_FLAG, False):
                 self.window.focus_view(view)
+                # Reconnect if session was lost (e.g., after a restart)
+                if self.window.id() not in chatview_clients:
+                    _reconnect_chat_view(view)
                 if initial_msg:
                     view.run_command("chat_input_prompt", {"text": initial_msg})
                 return
@@ -1327,6 +1362,17 @@ class ChatViewHistoryDownCommand(sublime_plugin.TextCommand):
 
 
 class ChatViewListener(sublime_plugin.EventListener):
+    def on_load(self, view):
+        """
+        Reconnect a restored chat view when it is loaded asynchronously
+        (e.g., after a Sublime Text restart).
+        """
+        if not view.settings().get(CHAT_VIEW_FLAG, False):
+            return
+        window = view.window()
+        if window and window.id() not in chatview_clients:
+            sublime.set_timeout(lambda: _reconnect_chat_view(view), 100)
+
     def on_close(self, view):
         """
         Cleanup session when the chat view is closed.
