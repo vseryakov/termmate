@@ -554,7 +554,7 @@ class PermissionPanel:
     def _build_html(self, request_id, tool_name, display_content, has_diff, approve_mode=None):
         """Build the HTML for the permission phantom."""
         allow_chat_btn = ""
-        if approve_mode == ApproveMode.DEFAULT.value:
+        if approve_mode in (ApproveMode.DEFAULT.value, ApproveMode.ALLOW_EDIT.value):
             allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
 
         return f"""
