@@ -204,6 +204,11 @@ class CodexAgent(BaseAgent):
         if prompt:
             await self.send_message(prompt)
 
+    def set_model(self, model: str) -> None:
+        """Dynamically switch the model; takes effect on the next turn."""
+        self.options.model = model
+        LOG.info(f"Codex model switched to: {model}")
+
     async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
         """Send a user message to Codex by starting a new turn on the thread."""
         if not self._is_connected:
@@ -211,10 +216,14 @@ class CodexAgent(BaseAgent):
         if not self.thread_id:
             raise RuntimeError("No active thread. Call connect() first.")
 
-        await self._rpc_request("turn/start", {
+        params: Dict[str, Any] = {
             "threadId": self.thread_id,
             "input": [{"type": "text", "text": content}],
-        })
+        }
+        if self.options.model:
+            params["model"] = self.options.model
+
+        await self._rpc_request("turn/start", params)
 
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
@@ -346,6 +355,11 @@ class CodexAgent(BaseAgent):
 
         elif method == "item/fileChange/requestApproval":
             asyncio.create_task(self._handle_file_approval(data["id"], params))
+
+        elif method == "codex/event/stream_error":
+            msg = params.get("msg", {})
+            err_text = msg.get("message", "") if isinstance(msg, dict) else str(params)
+            LOG.warning(f"Codex stream error: {err_text}")
 
         elif method == "codex/event/error" or method == "error":
             msg = params.get("msg", {})

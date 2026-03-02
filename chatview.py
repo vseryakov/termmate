@@ -1889,6 +1889,11 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
             if window_id in chatview_clients:
                 session = chatview_clients[window_id]
                 session.model_phantom.update(plan_mode=session.plan_mode)
+                # For Codex agent, update the running agent directly
+                if agent_provider == "codex":
+                    agent_thread = session.agent_thread
+                    if agent_thread and agent_thread.agent:
+                        agent_thread.agent.set_model(model.strip())
 
     def input(self, args):
         # Check if ChatSession has available models
