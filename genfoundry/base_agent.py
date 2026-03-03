@@ -89,7 +89,8 @@ class AgentOptions:
         plan_mode: bool = False,
         # Codex specific options can be added here
         sandbox_mode: Optional[str] = None,
-        approve_mode: Optional[str] = None
+        approve_mode: Optional[str] = None,
+        session_id: Optional[str] = None
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -106,6 +107,7 @@ class AgentOptions:
         self.plan_mode = plan_mode
         self.sandbox_mode = sandbox_mode
         self.approve_mode = approve_mode
+        self.session_id = session_id
 
 
 class BaseAgent(abc.ABC):

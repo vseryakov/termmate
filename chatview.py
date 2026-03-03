@@ -209,7 +209,8 @@ class AgentThread(threading.Thread):
             can_use_tool=getattr(self, 'agent_options_callback', None),
             plan_mode=self.anthropic_config.get("plan_mode", False),
             allowed_tools=self.anthropic_config.get("allowed_tools"),
-            approve_mode=self.anthropic_config.get("approve_mode")
+            approve_mode=self.anthropic_config.get("approve_mode"),
+            session_id=self.anthropic_config.get("session_id")
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
@@ -247,6 +248,13 @@ class AgentThread(threading.Thread):
             text = await self.input_queue.get()
             if text:
                 await self.agent.send_message(text)
+
+    @property
+    def session_id(self):
+        """Get the session id of the current running agent."""
+        if self.agent and hasattr(self.agent, "_session_id"):
+            return self.agent._session_id
+        return self.anthropic_config.get("session_id")
 
     async def _receive_messages(self):
         """Read messages from agent and callback."""
@@ -1278,6 +1286,53 @@ class ChatSession:
         switch_msg = f"\n\n[Switched agent to: {new_agent_provider}]\n\n"
         self.chat_view.run_command("chat_output_append", {"text": switch_msg})
 
+    def reload_agent(self, plan_mode=None):
+        """Restart the current agent process, optionally with a new plan mode or resuming session."""
+        self.stop_loading()
+
+        # Get current session_id if it's a Claude agent
+        old_session_id = None
+        current_agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
+
+        if current_agent_provider == "claude" and self.agent_thread:
+            old_session_id = self.agent_thread.session_id
+
+        if self.agent_thread:
+            self.agent_thread.stop()
+            self.agent_thread = None
+
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        cli_path = settings.get(f"{current_agent_provider}_command") or None
+        model = self.window.settings().get(f"chatview_model_{current_agent_provider}") or None
+
+        if plan_mode is None:
+            plan_mode = self.plan_mode
+
+        anthropic_config = {
+            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
+            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
+            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
+            "model": model,
+            "plan_mode": plan_mode == PlanMode.PLANNING,
+            "allowed_tools": settings.get("allowed_tools"),
+            "agent_provider": current_agent_provider,
+            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
+            "session_id": old_session_id
+        }
+
+        cwd = get_best_dir(self.chat_view)
+        self.agent_thread = AgentThread(
+            cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
+        )
+        self.agent_thread.start()
+        LOG.info(f"Reconnected agent: {current_agent_provider} (resume: {bool(old_session_id)})")
+
+        if old_session_id:
+            msg = f"\n\n[Plan mode changed, resuming session {old_session_id}...]\n\n"
+        else:
+            msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
+        self.chat_view.run_command("chat_output_append", {"text": msg})
+
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
     """
@@ -2096,6 +2151,8 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             session.model_phantom.update(plan_mode=plan_mode_enum)
+            # Reconnect agent to make plan mode take effect
+            session.reload_agent(plan_mode=plan_mode_enum)
 
         status = "planning" if plan_mode_enum == PlanMode.PLANNING else "fast"
         sublime.status_message(f"Plan mode set to: {status}")

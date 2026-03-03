@@ -110,6 +110,10 @@ class ClaudeCodeAgent(BaseAgent):
             "--permission-prompt-tool=stdio",
         ]
 
+        # Add resume flag if session_id is provided
+        if self.options.session_id:
+            cmd.extend(["--resume", self.options.session_id])
+
         # Add plan mode if enabled (overrides permission mode if strictly enforced)
         if self.options.plan_mode:
             cmd.extend(["--permission-mode", "plan"])
