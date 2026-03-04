@@ -91,8 +91,12 @@ Customize TermMate by editing your settings:
 
 ---
 
-## 💡 Pro Tips
+## 💡 Tips
 - **Selection as Context**: Select code before starting a chat to focus the agent's attention on specific logic.
 - **Iterative Refinement**: Use **Planning Mode** for large architectural changes to see the agent's proposed steps before they are applied.
-- **Tool Autonomy**: Use **Accept All** in Approve Mode when performing repetitive tasks across many files.
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+It is free for personal, research, and non-commercial organizations. **Commercial use is strictly prohibited.**
 
