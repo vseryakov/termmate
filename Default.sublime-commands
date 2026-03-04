@@ -1,34 +1,34 @@
 [
     {
-        "caption": "ChatView: Start Chat",
+        "caption": "TermMate: Start Chat",
         "command": "chat_view_cli"
     },
     {
-        "caption": "ChatView: Prompt",
+        "caption": "TermMate: Prompt",
         "command": "chat_view_prompt"
     },
     {
-        "caption": "ChatView: Set Working Directory\tworkspace cwd path",
+        "caption": "TermMate: Set Working Directory\tworkspace cwd path",
         "command": "chat_view_set_workspace_input"
     },
     {
-        "caption": "ChatView: Approve Mode\ttool permission mode",
+        "caption": "TermMate: Approve Mode\ttool permission mode",
         "command": "chat_view_set_approve_mode"
     },
     {
-        "caption": "ChatView: Model",
+        "caption": "TermMate: Model",
         "command": "chat_view_set_model"
     },
     {
-        "caption": "ChatView: Agent",
+        "caption": "TermMate: Agent",
         "command": "chat_view_set_agent"
     },
     {
-        "caption": "ChatView: Clear Session",
+        "caption": "TermMate: Clear Session",
         "command": "chat_view_clear_session"
     },
     {
-        "caption": "ChatView: Plan Mode",
+        "caption": "TermMate: Plan Mode",
         "command": "chat_view_toggle_plan_mode"
     }
 ]

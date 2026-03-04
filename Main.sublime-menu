@@ -10,13 +10,13 @@
                 "id": "package-settings",
                 "children": [
                     {
-                        "caption": "ChatView",
+                        "caption": "TermMate",
                         "children": [
                             {
                                 "command": "edit_settings",
                                 "args": {
-                                    "base_file": "${packages}/ChatView/ChatView.sublime-settings",
-                                    "default": "{\n\t\"chatview_command\": \"\"\n}\n"
+                                    "base_file": "${packages}/TermMate/TermMate.sublime-settings",
+                                    "default": "{\n\t\"claude_command\": \"\"\n}\n"
                                 },
                                 "caption": "Settings"
                             },
@@ -24,12 +24,12 @@
                                 "caption": "-"
                             },
                             {
+                                "caption": "Key Bindings",
                                 "command": "edit_settings",
                                 "args": {
-                                    "base_file": "${packages}/ChatView/Default.sublime-keymap",
+                                    "base_file": "${packages}/TermMate/Default.sublime-keymap",
                                     "default": "[\n\t{ \"keys\": [\"primary+alt+g\"], \"command\": \"chat_view_cli\" }\n]\n"
-                                },
-                                "caption": "Key Bindings"
+                                }
                             }
                         ]
                     }

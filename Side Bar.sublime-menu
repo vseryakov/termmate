@@ -1,6 +1,6 @@
 [
     {
-        "caption": "Set ChatView WorkSpace",
+        "caption": "Set TermMate WorkSpace",
         "command": "chat_view_set_workspace",
         "args": {"files": [], "dirs": []}
     }

@@ -30,7 +30,7 @@ CHAT_MODEL = "chatview_model"
 CHAT_PLAN_MODE = "chatview_plan_mode"
 CHAT_AGENT = "chatview_agent_provider"
 CHAT_VIEW_NAME = "Chat View"
-PACKAGE_NAME = "ChatView"
+PACKAGE_NAME = "TermMate"
 PROMPT_PREFIX = "\n❯ "
 
 # Global store for active ChatSession: window_id -> ChatSession
@@ -1242,7 +1242,7 @@ class ChatSession:
         self.session_allow_all = False
 
         # Show reset message in the history
-        reset_msg = "\n\nChatView session reset...\n"
+        reset_msg = f"\n\n{PACKAGE_NAME} session reset...\n"
         self.chat_view.run_command("chat_output_append", {"text": reset_msg})
 
         cwd = get_best_dir(self.chat_view)
@@ -1364,7 +1364,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         shortcut = "Command+Enter" if sublime.platform() == "osx" else "Control+Enter"
         welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
 
-        chat_view.run_command("append", {"characters": "Starting ChatView CLI session...\n"})
+        chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent session...\n"})
         cwd = get_best_dir(chat_view)
         if cwd:
             chat_view.run_command("append", {"characters": f"cwd: {cwd}\n"})
@@ -1393,7 +1393,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
 
         window_id = window.id()
         if window_id not in chatview_clients:
-            sublime.status_message("No active ChatView session found")
+            sublime.status_message(f"No active {PACKAGE_NAME} session found")
             return
 
         input_start = self.view.settings().get(CHAT_INPUT_START, 0)
@@ -1821,7 +1821,7 @@ class ChatViewPromptHandler(sublime_plugin.TextInputHandler):
         return "Enter your prompt for ChatView..."
 
     def description(self, text):
-        return "ChatView: " + text if text else "ChatView Prompt"
+        return f"{PACKAGE_NAME}: " + text if text else f"{PACKAGE_NAME} Prompt"
 
 
 class ChatViewPromptCommand(sublime_plugin.WindowCommand):
@@ -1907,7 +1907,7 @@ class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
             self.window.settings().set(CHAT_WORKSPACE, target_dir)
             sublime.status_message(f"ChatView Dir set to: {target_dir}")
         else:
-            sublime.status_message("No valid directory for ChatView Workspace")
+            sublime.status_message(f"No valid directory for {PACKAGE_NAME} Workspace")
 
     def is_visible(self, files=[], dirs=[]):
         # Show only if at least one item is selected
@@ -2038,7 +2038,7 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
             self.window.settings().set(f"chatview_model_{agent_provider}", model.strip())
             # Also update the display key
             self.window.settings().set(CHAT_MODEL, model.strip())
-            sublime.status_message(f"ChatView model set to: {model}")
+            sublime.status_message(f"{PACKAGE_NAME} model set to: {model}")
 
             # Update the model phantom if session exists
             window_id = self.window.id()
