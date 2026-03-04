@@ -2,7 +2,7 @@
 
 **Agentic Coding Mate from Design to meet Code**
 
-![TermMate Screenshot](screenshot.png)
+![TermMate Screenshot](screenshot.jpg)
 
 TermMate is a powerful agentic coding design tool for Sublime Text, bringing the full capabilities of AI-driven development directly into your editor. Built to work seamlessly with **ClaudeCode** and **Codex**, TermMate allows you to orchestrate complex coding tasks, refactor entire modules, and explore your codebase with a conversation-driven workflow that understands your project context.
 
