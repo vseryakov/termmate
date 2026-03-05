@@ -1256,6 +1256,8 @@ class ChatSession:
         """Stop the current agent thread and start a new one with the given provider."""
         self.stop_loading()
         self.session_allow_all = False
+        # Clear stale models from previous agent
+        self.available_models = []
 
         if self.agent_thread:
             self.agent_thread.stop()
