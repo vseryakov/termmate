@@ -144,6 +144,10 @@ class ClaudeCodeAgent(BaseAgent):
         if self.options.auth_token is not None:
             env["ANTHROPIC_AUTH_TOKEN"] = self.options.auth_token
 
+        # Inject user-defined extra environment variables
+        if self.options.extra_env:
+            env.update(self.options.extra_env)
+
         # Start subprocess
         self.process = await asyncio.create_subprocess_exec(
             *cmd,

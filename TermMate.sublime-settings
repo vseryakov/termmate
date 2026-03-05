@@ -7,5 +7,10 @@
     "allowed_tools": ["Read", "Glob", "Grep", "TodoWrite", "WebFetch", "WebSearch", "Skill"],
     // Path or command name for the coding CLI executable.
     "claude_command": "",
-    "codex_command": ""
+    "codex_command": "",
+
+    // Extra environment variables to inject into Claude and Codex subprocesses.
+    // Useful for setting API keys, proxies, or any other per-user env configuration.
+    // Example: { "HTTPS_PROXY": "http://proxy:8888", "OPENAI_API_KEY": "sk-..." }
+    "env": {}
 }

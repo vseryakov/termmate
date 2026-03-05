@@ -141,6 +141,10 @@ class CodexAgent(BaseAgent):
         if self.options.base_url is not None:
             env["OPENAI_BASE_URL"] = self.options.base_url
 
+        # Inject user-defined extra environment variables
+        if self.options.extra_env:
+            env.update(self.options.extra_env)
+
         cmd = [self.cli_path, "app-server"]
 
         LOG.info(f"Starting Codex app-server: {' '.join(cmd)}")

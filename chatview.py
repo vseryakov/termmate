@@ -210,7 +210,8 @@ class AgentThread(threading.Thread):
             plan_mode=self.anthropic_config.get("plan_mode", False),
             allowed_tools=self.anthropic_config.get("allowed_tools"),
             approve_mode=self.anthropic_config.get("approve_mode"),
-            session_id=self.anthropic_config.get("session_id")
+            session_id=self.anthropic_config.get("session_id"),
+            extra_env=self.anthropic_config.get("env")
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
@@ -1082,7 +1083,8 @@ class ChatSession:
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
             "agent_provider": agent_provider,
-            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
+            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
+            "env": settings.get("env", {})
         }
 
         # Initialize background agent thread
@@ -1275,7 +1277,8 @@ class ChatSession:
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
             "agent_provider": new_agent_provider,
-            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
+            "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
+            "env": settings.get("env", {})
         }
 
         cwd = get_best_dir(self.chat_view)
@@ -1319,7 +1322,8 @@ class ChatSession:
             "allowed_tools": settings.get("allowed_tools"),
             "agent_provider": current_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
-            "session_id": old_session_id
+            "session_id": old_session_id,
+            "env": settings.get("env", {})
         }
 
         cwd = get_best_dir(self.chat_view)

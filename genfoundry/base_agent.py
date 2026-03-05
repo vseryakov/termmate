@@ -90,7 +90,8 @@ class AgentOptions:
         # Codex specific options can be added here
         sandbox_mode: Optional[str] = None,
         approve_mode: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        extra_env: Optional[Dict[str, str]] = None
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -108,6 +109,7 @@ class AgentOptions:
         self.sandbox_mode = sandbox_mode
         self.approve_mode = approve_mode
         self.session_id = session_id
+        self.extra_env = extra_env or {}
 
 
 class BaseAgent(abc.ABC):
