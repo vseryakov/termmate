@@ -1931,6 +1931,9 @@ class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
 
 
 class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
+    def __init__(self, current_model=None):
+        self.current_model = current_model
+
     def name(self):
         return "model"
 
@@ -1943,10 +1946,18 @@ class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
                 session = chatview_clients[window_id]
                 if session.available_models:
                     # Return list of tuples: (display_text, value)
-                    return [
+                    items = [
                         (f"{m['displayName']} - {m['description']}", m['value'])
                         for m in session.available_models
                     ]
+
+                    # Move current model to the front
+                    if self.current_model:
+                        for i, item in enumerate(items):
+                            if item[1] == self.current_model:
+                                items.insert(0, items.pop(i))
+                                break
+                    return items
 
         return []
 
@@ -2051,8 +2062,11 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             if session.available_models:
+                # Get current model to highlight it
+                agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
+                current_model = self.window.settings().get(f"chatview_model_{agent_provider}")
                 # Use ListInputHandler for dropdown selection
-                return ChatViewSetModelListHandler()
+                return ChatViewSetModelListHandler(current_model)
 
         # Fallback to TextInputHandler for manual input
         return ChatViewSetModelTextHandler()
