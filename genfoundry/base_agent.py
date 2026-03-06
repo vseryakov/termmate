@@ -82,9 +82,6 @@ class AgentOptions:
         allowed_tools: Optional[List[str]] = None,
         permission_mode: str = "default",
         model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        auth_token: Optional[str] = None,
         can_use_tool: Optional[Callable] = None,
         plan_mode: bool = False,
         # Codex specific options can be added here
@@ -101,9 +98,6 @@ class AgentOptions:
         self.allowed_tools = allowed_tools or []
         self.permission_mode = permission_mode
         self.model = model
-        self.api_key = api_key
-        self.base_url = base_url
-        self.auth_token = auth_token
         self.can_use_tool = can_use_tool
         self.plan_mode = plan_mode
         self.sandbox_mode = sandbox_mode

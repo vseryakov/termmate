@@ -202,9 +202,6 @@ class AgentThread(threading.Thread):
         options = AgentOptions(
             cwd=self.cwd,
             cli_path=self.cli_path,
-            api_key=self.anthropic_config.get("ANTHROPIC_API_KEY"),
-            base_url=self.anthropic_config.get("ANTHROPIC_BASE_URL"),
-            auth_token=self.anthropic_config.get("ANTHROPIC_AUTH_TOKEN"),
             model=self.anthropic_config.get("model"),
             can_use_tool=getattr(self, 'agent_options_callback', None),
             plan_mode=self.anthropic_config.get("plan_mode", False),
@@ -1076,9 +1073,6 @@ class ChatSession:
         model = self.window.settings().get(f"chatview_model_{agent_provider}") or None
 
         anthropic_config = {
-            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
-            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
-            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
@@ -1270,9 +1264,6 @@ class ChatSession:
         model = self.window.settings().get(f"chatview_model_{new_agent_provider}") or None
 
         anthropic_config = {
-            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
-            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
-            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
@@ -1314,9 +1305,6 @@ class ChatSession:
             plan_mode = self.plan_mode
 
         anthropic_config = {
-            "ANTHROPIC_API_KEY": settings.get("ANTHROPIC_API_KEY"),
-            "ANTHROPIC_BASE_URL": settings.get("ANTHROPIC_BASE_URL"),
-            "ANTHROPIC_AUTH_TOKEN": settings.get("ANTHROPIC_AUTH_TOKEN"),
             "model": model,
             "plan_mode": plan_mode == PlanMode.PLANNING,
             "allowed_tools": settings.get("allowed_tools"),

@@ -136,12 +136,8 @@ class CodexAgent(BaseAgent):
             raise RuntimeError("Client is already connected")
 
         env = os.environ.copy()
-        if self.options.api_key is not None:
-            env["CODEX_API_KEY"] = self.options.api_key
-        if self.options.base_url is not None:
-            env["OPENAI_BASE_URL"] = self.options.base_url
 
-        # Inject user-defined extra environment variables
+        # Inject user-defined extra environment variables (including ANTHROPIC_API_KEY etc.)
         if self.options.extra_env:
             env.update(self.options.extra_env)
 

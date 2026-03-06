@@ -10,7 +10,10 @@
     "codex_command": "",
 
     // Extra environment variables to inject into Claude and Codex subprocesses.
-    // Useful for setting API keys, proxies, or any other per-user env configuration.
-    // Example: { "HTTPS_PROXY": "http://proxy:8888", "OPENAI_API_KEY": "sk-..." }
+    // Useful for setting API keys, or any other per-user env configuration.
+    // Example: {
+    //   "ANTHROPIC_API_KEY": "sk-ant-...",
+    //   "CODEX_API_KEY": "sk-..."
+    // }
     "env": {}
 }

@@ -135,16 +135,7 @@ class ClaudeCodeAgent(BaseAgent):
         env = os.environ.copy()
         env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-py"
 
-        if self.options.api_key is not None:
-            env["ANTHROPIC_API_KEY"] = self.options.api_key
-
-        if self.options.base_url is not None:
-            env["ANTHROPIC_BASE_URL"] = self.options.base_url
-
-        if self.options.auth_token is not None:
-            env["ANTHROPIC_AUTH_TOKEN"] = self.options.auth_token
-
-        # Inject user-defined extra environment variables
+        # Inject user-defined extra environment variables (including ANTHROPIC_API_KEY etc.)
         if self.options.extra_env:
             env.update(self.options.extra_env)
 
