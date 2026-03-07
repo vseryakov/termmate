@@ -328,6 +328,15 @@ class AgentThread(threading.Thread):
             # Schedule the reset in the agent's event loop
             asyncio.run_coroutine_threadsafe(self._reset_agent(), self.loop)
 
+    def update_config(self, **kwargs):
+        """Update the agent configuration dynamically."""
+        self.anthropic_config.update(kwargs)
+        if self.agent and "plan_mode" in kwargs:
+            # For Codex, we can update plan_mode attribute directly
+            if hasattr(self.agent, "plan_mode"):
+                self.agent.plan_mode = kwargs["plan_mode"]
+                LOG.info(f"Updated agent plan_mode to: {self.agent.plan_mode}")
+
 
 class ModelPanel:
     """
@@ -1327,6 +1336,19 @@ class ChatSession:
             msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
         self.chat_view.run_command("chat_output_append", {"text": msg})
 
+    def update_plan_mode(self, plan_mode):
+        """Update the plan mode for the current session."""
+        self.stop_loading()
+        current_agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
+
+        # For Codex, we can update without reconnecting
+        if current_agent_provider == "codex":
+            self.agent_thread.update_config(plan_mode=(plan_mode == PlanMode.PLANNING))
+            LOG.info(f"Dynamically updated Codex plan mode to: {plan_mode}")
+        else:
+            # For Claude and others, we still need to reload/reconnect
+            self.reload_agent(plan_mode=plan_mode)
+
 
 class ChatViewCliCommand(sublime_plugin.WindowCommand):
     """
@@ -2159,8 +2181,8 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             session.model_phantom.update(plan_mode=plan_mode_enum)
-            # Reconnect agent to make plan mode take effect
-            session.reload_agent(plan_mode=plan_mode_enum)
+            # Update plan mode (reconnects for Claude, dynamic update for Codex)
+            session.update_plan_mode(plan_mode=plan_mode_enum)
 
         status = "planning" if plan_mode_enum == PlanMode.PLANNING else "fast"
         sublime.status_message(f"Plan mode set to: {status}")
