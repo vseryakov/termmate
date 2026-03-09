@@ -23,6 +23,9 @@ curl -fsSL https://claude.ai/install.sh | bash
 npm install -g @openai/codex
 ```
 
+> **Note:** TermMate automatically detects CLI installation paths across multiple environments, including **Homebrew**, **npm-global**, **Yarn**, and common local binary directories. You typically don't need to manually configure environment variables or search paths.
+
+
 ### 2. Authentication
 Authenticate the agents via your terminal:
 
@@ -79,15 +82,21 @@ TermMate provides deep integration with agentic workflows via the Command Palett
 ---
 
 ## Configuration
+
 Customize TermMate by editing your settings:
 `Preferences -> Package Settings -> TermMate -> Settings`
 
 ```json
 {
-    "claude_command": "your-claude-path",
-    "codex_command": "your-codex-path"
+    "claude_command": "/path/to/your/custom/claude",
+    "codex_command": "/path/to/your/custom/codex"
 }
 ```
+
+While TermMate automatically detects most installation paths, you may need to configure them manually if:
+- You use a custom installation location not listed in the default paths.
+- You have multiple versions installed and want to pin a specific binary.
+- Automatic detection fails on your specific OS configuration.
 
 ---
 
