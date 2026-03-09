@@ -162,8 +162,6 @@ class ClaudeCodeAgent(BaseAgent):
         if prompt:
             await self.send_message(prompt)
 
-
-
     async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
         """
         Send a user message to Claude.
@@ -191,6 +189,56 @@ class ClaudeCodeAgent(BaseAgent):
             message["session_id"] = self._session_id
 
         await self._write_json(message)
+
+    async def set_permission_mode(self, mode: str) -> None:
+        """
+        Change permission mode during conversation.
+
+        Args:
+            mode: The permission mode to set. Valid options:
+                - 'default': CLI prompts for dangerous tools
+                - 'acceptEdits': Auto-accept file edits
+                - 'bypassPermissions': Allow all tools (use with caution)
+                - 'plan': Planning mode
+        """
+        if not self.is_connected:
+            raise RuntimeError("Client is not connected. Call connect() first.")
+
+        request = {
+            "subtype": "set_permission_mode",
+            "mode": mode,
+        }
+        await self._send_control_request(request)
+
+    async def set_model(self, model: Optional[str] = None) -> None:
+        """
+        Change the AI model during conversation.
+
+        Args:
+            model: The model to use, or None to use default.
+        """
+        if not self.is_connected:
+            raise RuntimeError("Client is not connected. Call connect() first.")
+
+        request = {
+            "subtype": "set_model",
+            "model": model,
+        }
+        await self._send_control_request(request)
+
+    async def _send_control_request(self, request: Dict[str, Any]) -> None:
+        """Send a control request to Claude CLI"""
+        import uuid
+        request_id = f"req_{uuid.uuid4().hex[:8]}"
+
+        control_request = {
+            "type": "control_request",
+            "request_id": request_id,
+            "request": request
+        }
+
+        await self._write_json(control_request)
+        LOG.debug(f"Sent control_request {request.get('subtype')}: {request_id}")
 
     async def _write_json(self, data: Dict[str, Any]) -> None:
         """Write a JSON message to the subprocess stdin"""
