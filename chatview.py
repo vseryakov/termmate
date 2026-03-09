@@ -331,7 +331,10 @@ class AgentThread(threading.Thread):
     def update_config(self, **kwargs):
         """Update the agent configuration dynamically."""
         self.anthropic_config.update(kwargs)
-        if self.agent and "plan_mode" in kwargs:
+        if not self.agent:
+            return
+
+        if "plan_mode" in kwargs:
             plan_mode = kwargs["plan_mode"]
             if isinstance(self.agent, CodexAgent):
                 self.agent.plan_mode = plan_mode
@@ -346,6 +349,18 @@ class AgentThread(threading.Thread):
                     self.loop
                 )
                 LOG.info(f"Updated Claude plan_mode to: {plan_mode} (perm: {mode})")
+
+        if "model" in kwargs:
+            model = kwargs["model"]
+            if isinstance(self.agent, CodexAgent):
+                self.agent.set_model(model)
+                LOG.info(f"Updated Codex model to: {model}")
+            elif isinstance(self.agent, ClaudeCodeAgent):
+                asyncio.run_coroutine_threadsafe(
+                    self.agent.set_model(model),
+                    self.loop
+                )
+                LOG.info(f"Updated Claude model to: {model}")
 
 
 class ModelPanel:
@@ -1349,8 +1364,9 @@ class ChatSession:
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
         self.stop_loading()
-        # All supported agents (Claude via SDK, Codex) now support dynamic plan mode updates
-        self.agent_thread.update_config(plan_mode=(plan_mode == PlanMode.PLANNING))
+        # support dynamic plan mode updates
+        is_planning = (plan_mode == PlanMode.PLANNING)
+        self.agent_thread.update_config(plan_mode=is_planning)
         LOG.info(f"Dynamically updated plan mode to: {plan_mode}")
 
 
@@ -2076,11 +2092,9 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
             if window_id in chatview_clients:
                 session = chatview_clients[window_id]
                 session.model_phantom.update(plan_mode=session.plan_mode)
-                # For Codex agent, update the running agent directly
-                if agent_provider == "codex":
-                    agent_thread = session.agent_thread
-                    if agent_thread and agent_thread.agent:
-                        agent_thread.agent.set_model(model.strip())
+                # Update the running agent directly
+                if session.agent_thread:
+                    session.agent_thread.update_config(model=model.strip())
 
     def input(self, args):
         # Check if ChatSession has available models
