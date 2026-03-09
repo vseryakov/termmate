@@ -6,8 +6,6 @@
 
 TermMate is a powerful agentic coding design tool for Sublime Text, bringing the full capabilities of AI-driven development directly into your editor. Built to work seamlessly with **ClaudeCode** and **Codex**, TermMate allows you to orchestrate complex coding tasks, refactor entire modules, and explore your codebase with a conversation-driven workflow that understands your project context.
 
----
-
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
@@ -45,8 +43,6 @@ Clone this repository into your Sublime Text `Packages` directory as `TermMate`.
 ### 4. Start Chat
 Open the Command Palette and search for `TermMate: Start Chat`. Alternatively, use the shortcut `Cmd+Alt+G` (macOS) or `Ctrl+Alt+G` (Windows/Linux) to start your first agentic coding session instantly.
 
----
-
 ## 🛠️ Key Features
 
 ### Conversational Workflow
@@ -66,8 +62,6 @@ TermMate provides deep integration with agentic workflows via the Command Palett
 - **Set Workspace**: Define the agent's working directory from the sidebar or palette.
 - **Clear Session**: Reset the agent's memory and state for a fresh start.
 
----
-
 ## Shortcuts & Commands
 
 | Action | macOS | Windows/Linux | Command Palette |
@@ -78,8 +72,6 @@ TermMate provides deep integration with agentic workflows via the Command Palett
 | **Set Workspace** | - | - | `TermMate: Set Working Directory` |
 | **Switch Mode** | - | - | `TermMate: Plan Mode` |
 | **Approve Mode** | - | - | `TermMate: Approve Mode` |
-
----
 
 ## Configuration
 
@@ -98,11 +90,11 @@ While TermMate automatically detects most installation paths, you may need to co
 - You have multiple versions installed and want to pin a specific binary.
 - Automatic detection fails on your specific OS configuration.
 
----
-
 ## 💡 Tips
+
 - **Selection as Context**: Select code before starting a chat to focus the agent's attention on specific logic.
 - **Iterative Refinement**: Use **Planning Mode** for large architectural changes to see the agent's proposed steps before they are applied.
+
 ## License
 
 This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
