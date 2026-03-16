@@ -843,12 +843,13 @@ class AskUserQuestionHandler:
 
         answers = {}
         if selected_labels:
-            question_text = question_data.get("question", "")
+            # Use 'id' if present (e.g. for Codex), otherwise fallback to the question text (e.g. for Claude)
+            question_key = question_data.get("id", question_data.get("question", ""))
             multi_select = question_data.get("multiSelect", False)
             if multi_select:
-                answers[question_text] = ", ".join(selected_labels)
+                answers[question_key] = selected_labels
             else:
-                answers[question_text] = selected_labels[0]
+                answers[question_key] = selected_labels[0]
 
         # Update the input_data with answers
         updated_input = self.input_data.copy()

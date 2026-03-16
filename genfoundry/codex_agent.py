@@ -270,6 +270,7 @@ class CodexAgent(BaseAgent):
 
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
+        LOG.debug(f"response for codex request [{request_id}]: {result}")
         await self._write_json({"id": request_id, "result": result})
 
     async def _write_json(self, data: Dict[str, Any]) -> None:
@@ -417,6 +418,9 @@ class CodexAgent(BaseAgent):
 
         elif method == "item/fileChange/requestApproval":
             asyncio.create_task(self._handle_file_approval(data["id"], params))
+
+        elif method == "item/tool/requestUserInput":
+            asyncio.create_task(self._handle_request_user_input(data["id"], params))
 
         elif method == "codex/event/stream_error":
             msg = params.get("msg", {})
@@ -566,6 +570,32 @@ class CodexAgent(BaseAgent):
         decision = "accept" if approved else "decline"
         await self._respond_to_server_request(request_id, {"decision": decision})
 
+    async def _handle_request_user_input(self, request_id: Any, params: Dict[str, Any]) -> None:
+        """Handle request for user input via tool/requestUserInput."""
+        approval_id = str(request_id)
+        LOG.info(f"User input request [rpc_id={request_id}]")
+
+        input_data = {"questions": params.get("questions", [])}
+        # Send as AskUserQuestion to re-use Claude's existing UI logic
+        response = await self._emit_approval_request(approval_id, "AskUserQuestion", input_data)
+
+        # response is either False (denied) or the answers dict
+        if response is False or response is None:
+             await self._respond_to_server_request(request_id, {"answers": {}})
+        else:
+             # Codex expects answers to be a dict of string -> { "answers": [list of strings] }
+             formatted_response = {}
+             for k, v in response.items():
+                 # Handle string or list of strings returned by chatview
+                 if isinstance(v, str):
+                     # Parse multi-select comma separated strings if necessary, though list is better
+                     formatted_response[k] = {"answers": [s.strip() for s in v.split(",") if s.strip()]}
+                 elif isinstance(v, list):
+                     formatted_response[k] = {"answers": v}
+                 else:
+                     formatted_response[k] = {"answers": [str(v)]}
+             await self._respond_to_server_request(request_id, {"answers": formatted_response})
+
     def _generate_file_change_diff(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Processes Codex file change parameters and generates combined diff data.
@@ -701,11 +731,11 @@ class CodexAgent(BaseAgent):
 
         return "".join(applied_lines)
 
-    async def _emit_approval_request(self, approval_id: str, tool_name: str, input_data: Dict[str, Any]) -> bool:
+    async def _emit_approval_request(self, approval_id: str, tool_name: str, input_data: Dict[str, Any]) -> Any:
         """
         Emit a control_request message to the message queue and wait for
         the UI to respond via send_approval_response().
-        Returns True if approved, False if denied.
+        Returns the full response data if approved/provided, False if denied.
         """
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending_approvals[approval_id] = future
@@ -731,7 +761,12 @@ class CodexAgent(BaseAgent):
         finally:
             self._pending_approvals.pop(approval_id, None)
 
-        return response_data.get("behavior") == "allow"
+        if response_data.get("behavior") == "allow":
+             updated_input = response_data.get("updatedInput", {})
+             if "answers" in updated_input:
+                 return updated_input.get("answers")
+             return True
+        return False
 
     async def receive_messages(self) -> AsyncIterator[Message]:
         """
