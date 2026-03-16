@@ -440,11 +440,17 @@ class CodexAgent(BaseAgent):
             self._item_cache[item_id] = item
 
         if item_type == "commandExecution":
+            # Extract cleaner command from commandActions if available
+            command = item.get("command")
+            actions = item.get("commandActions", [])
+            if actions and isinstance(actions, list) and actions[0].get("command"):
+                command = actions[0].get("command")
+
             tool_msg = Message(
                 MessageType.TOOL_USE.value,
                 content={
                     "name": "command_execution",
-                    "command": item.get("command"),
+                    "command": command,
                     "status": "in_progress",
                 },
                 msg_id=item.get("id"),
@@ -463,18 +469,12 @@ class CodexAgent(BaseAgent):
                 await self._message_queue.put(msg)
 
         elif item_type == "commandExecution":
-            tool_msg = Message(
-                MessageType.TOOL_USE.value,
-                content={
-                    "name": "command_execution",
-                    "command": item.get("command"),
-                    "output": item.get("aggregatedOutput"),
-                    "exit_code": item.get("exitCode"),
-                    "status": item.get("status"),
-                },
-                msg_id=item.get("id"),
-            )
-            await self._message_queue.put(tool_msg)
+            # Just mark as completed if we want to update UI state,
+            # but we've already displayed the command in _handle_item_started.
+            # BaseAgent/ChatView might expect a message to know it's done.
+            # However, ChatView doesn't seem to have a special handler for command result yet.
+            # To avoid "duplication" reported by user, we skip sending another TOOL_USE here.
+            pass
 
         elif item_type == "fileChange":
             changes = item.get("changes", [])

@@ -968,6 +968,10 @@ class ChatMessageProcessor:
             elif message.type == "turn_started":
                 # Extract turnId if available
                 self._active_turn_id = message.content.get("turnId")
+                self.session.start_loading()
+
+            elif message.type in ("thinking", "text"):
+                self.session.start_loading()
 
             elif message.type == "stop":
                 # Codex agent sends "stop" when its process completes
@@ -1060,7 +1064,12 @@ class ChatMessageProcessor:
         elif name == "command_execution":
             command = block.get("command", "")
             if command:
-                return f"⏺ command ({command})"
+                if "\n" in command:
+                    # Show only first line followed by ...
+                    first_line = command.split("\n")[0]
+                    return f"⏺ command ({first_line}...)"
+                else:
+                    return f"⏺ command ({command})"
             return "⏺ command"
         elif name == "file_change":
             filenames = block.get("filenames", [])

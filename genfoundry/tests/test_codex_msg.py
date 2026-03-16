@@ -212,6 +212,68 @@ class TestCodexTwoTurns(unittest.IsolatedAsyncioTestCase):
             finally:
                 await agent.disconnect()
 
+    async def test_command_execution_handling(self):
+        """Verify that command execution extracts clean command and avoids duplication."""
+        fake_proc = FakeProcess()
+        opts = AgentOptions(cli_path="/usr/bin/true")
+        agent = CodexAgent(options=opts)
+
+        rpc_responses = []
+        async def mock_write_json(data: dict):
+            rid = data.get("id")
+            method = data.get("method")
+            if rid is not None:
+                if method == "initialize":
+                    fake_proc.feed({"id": rid, "result": {"capabilities": {}}})
+                elif method == "thread/start":
+                    fake_proc.feed({"id": rid, "result": {"thread": {"id": "thread-001"}}})
+                elif method == "turn/start":
+                    fake_proc.feed({"id": rid, "result": {}})
+                    # Simulate command execution events
+                    fake_proc.feed({
+                        "method": "item/started",
+                        "params": {
+                            "item": {
+                                "type": "commandExecution",
+                                "id": "cmd-1",
+                                "command": "/bin/zsh -lc 'ls'",
+                                "commandActions": [{"type": "listFiles", "command": "ls"}]
+                            }
+                        }
+                    })
+                    fake_proc.feed({
+                        "method": "item/completed",
+                        "params": {
+                            "item": {
+                                "type": "commandExecution",
+                                "id": "cmd-1",
+                                "command": "/bin/zsh -lc 'ls'",
+                                "status": "completed"
+                            }
+                        }
+                    })
+                    fake_proc.feed({"method": "turn/completed", "params": {"turnId": "turn-1"}})
+
+        agent._write_json = mock_write_json
+        with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+            await agent.connect()
+            try:
+                await agent.send_message("Run ls")
+                messages = await self._collect_turn(agent)
+
+                # Filter for TOOL_USE messages
+                tool_use_msgs = [m for m in messages if getattr(m, "type", None) == MessageType.TOOL_USE.value]
+
+                # Should only have ONE ToolUse message for the command
+                self.assertEqual(len(tool_use_msgs), 1, "Should only have one TOOL_USE message for commandExecution")
+
+                # The command should be the clean one from commandActions
+                self.assertEqual(tool_use_msgs[0].content["command"], "ls")
+                self.assertEqual(tool_use_msgs[0].content["name"], "command_execution")
+
+            finally:
+                await agent.disconnect()
+
 
 if __name__ == "__main__":
     unittest.main()
