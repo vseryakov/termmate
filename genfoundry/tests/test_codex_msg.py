@@ -179,6 +179,39 @@ class TestCodexTwoTurns(unittest.IsolatedAsyncioTestCase):
         finally:
             await agent.disconnect()
 
+    async def test_steer_plan(self):
+        """Verify that steer() sends a turn/start RPC (via send_message)."""
+        fake_proc = FakeProcess()
+        opts = AgentOptions(cli_path="/usr/bin/true")
+        agent = CodexAgent(options=opts)
+        self._rpc_calls = []
+
+        async def mock_write_json(data: dict):
+            self._rpc_calls.append(data)
+            rid = data.get("id")
+            method = data.get("method")
+            if rid is not None:
+                if method == "initialize":
+                    fake_proc.feed({"id": rid, "result": {"capabilities": {}}})
+                elif method == "thread/start":
+                    fake_proc.feed({"id": rid, "result": {"thread": {"id": "thread-001"}}})
+                elif method == "turn/start":
+                    fake_proc.feed({"id": rid, "result": {}})
+
+        agent._write_json = mock_write_json
+        with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+            await agent.connect()
+            try:
+                agent._active_turn_id = "turn-XYZ"
+                await agent.steer("Implement this plan")
+                steer_call = next((c for c in self._rpc_calls if c.get("method") == "turn/start"), None)
+                self.assertIsNotNone(steer_call)
+                self.assertEqual(steer_call["params"]["input"][0]["text"], "Implement this plan")
+                self.assertEqual(steer_call["params"]["expectedTurnId"], "turn-XYZ")
+                self.assertEqual(steer_call["params"]["threadId"], "thread-001")
+            finally:
+                await agent.disconnect()
+
 
 if __name__ == "__main__":
     unittest.main()

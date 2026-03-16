@@ -247,6 +247,18 @@ class AgentThread(threading.Thread):
             if text:
                 await self.agent.send_message(text)
 
+    async def _steer(self, text):
+        """Send steering message to agent."""
+        if self.agent:
+            await self.agent.steer(text)
+
+    def steer(self, text):
+        """Proxy steer call through the loop."""
+        if self.loop and self.running:
+            self.loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._steer(text))
+            )
+
     @property
     def session_id(self):
         """Get the session id of the current running agent."""
@@ -953,6 +965,10 @@ class ChatMessageProcessor:
                 if content:
                     self._plan_text += content
 
+            elif message.type == "turn_started":
+                # Extract turnId if available
+                self._active_turn_id = message.content.get("turnId")
+
             elif message.type == "stop":
                 # Codex agent sends "stop" when its process completes
                 self.append_content("", flush=True)
@@ -968,8 +984,12 @@ class ChatMessageProcessor:
                         plan_view.run_command("append", {"characters": pt})
                         plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
                         plan_view.set_scratch(True)
+                    self.append_content("\n")
                     sublime.set_timeout(open_plan, 0)
-                    self.append_content("[Plan generated — see Implementation Plan tab]\n")
+
+                    # Add Implement button if in plan mode
+                    if self.session.agent_thread and self.session.agent_thread.anthropic_config.get("plan_mode"):
+                        self.session.show_implement_plan_button()
 
             elif message.type == "control_response":
                 if hasattr(message, "content") and isinstance(message.content, dict):
@@ -1090,6 +1110,9 @@ class ChatSession:
         self.available_models = []  # Will be populated from control_response
         self.prompt_regions = [] # List of Regions for submitted prompts
         self.session_allow_all = False
+
+        self.implement_plan_phantoms = sublime.PhantomSet(self.chat_view, "implement_plan")
+        self.implement_plan_buttons = [] # List of (region, phantom) tuples
 
         self.message_processor = ChatMessageProcessor(self)
 
@@ -1223,8 +1246,54 @@ class ChatSession:
         self.loading_animation.stop()
         self.model_phantom.clear()
         self.permission_panel.clear_all()
+        self.implement_plan_phantoms.update([])
         if self.agent_thread:
             self.agent_thread.stop()
+
+    def show_implement_plan_button(self):
+        """Show a phantom button to trigger plan implementation."""
+        # Use a region at the very end of the chat history before the input prompt
+        input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
+        region = sublime.Region(input_start - 1, input_start)
+
+        html = """
+        <body id="chatview-implement-plan">
+            <style>
+                .btn-row {
+                    margin: 10px 0;
+                }
+                .btn {
+                    display: inline-block;
+                    text-decoration: none;
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                }
+                .btn-allow {
+                    background-color: var(--greenish);
+                    color: var(--background);
+                }
+            </style>
+            <div class="btn-row">
+                <a href="implement" class="btn btn-allow">Implement this plan</a>
+            </div>
+        </body>
+        """
+
+        def on_navigate(href):
+            if href == "implement":
+                self.window.run_command("chat_view_implement_plan")
+
+        # Append to our list of buttons
+        self.implement_plan_buttons.append(sublime.Phantom(
+            region,
+            html,
+            sublime.LAYOUT_BLOCK,
+            on_navigate
+        ))
+
+        # Update the phantom set
+        sublime.set_timeout(lambda: self.implement_plan_phantoms.update(self.implement_plan_buttons), 0)
 
     @property
     def plan_mode(self):
@@ -1247,6 +1316,10 @@ class ChatSession:
             self.add_prompt_highlight(region)
         self.message_processor._plan_text = ""
         self.agent_thread.send(user_input)
+
+    def steer(self, text):
+        """Send steering message to agent."""
+        self.agent_thread.steer(text)
 
     def add_prompt_highlight(self, region):
         """Add a gutter highlight to the specified prompt region."""
@@ -2221,4 +2294,16 @@ class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             session.handle_permission_action(request_id, action)
+
+
+class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
+    """
+    Trigger the 'Implement this plan' steering message.
+    """
+    def run(self):
+        window_id = self.window.id()
+        if window_id in chatview_clients:
+            session = chatview_clients[window_id]
+            sublime.status_message("Implementing plan...")
+            session.steer("Implement this plan")
 

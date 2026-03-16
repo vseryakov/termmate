@@ -214,6 +214,20 @@ class CodexAgent(BaseAgent):
         self.options.model = model
         LOG.info(f"Codex model switched to: {model}")
 
+    def _extract_turn_id(self, data: dict) -> Optional[str]:
+        """Extract turnId from a message params or result dict."""
+        if not data:
+            return None
+        # Check direct turnId (older format or item notifications)
+        turn_id = data.get("turnId")
+        if turn_id:
+            return turn_id
+        # Check nested turn object (Codex app-server format)
+        turn = data.get("turn")
+        if isinstance(turn, dict):
+            return turn.get("id")
+        return None
+
     async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
         """Send a user message to Codex by starting a new turn on the thread."""
         if not self._is_connected:
@@ -226,6 +240,8 @@ class CodexAgent(BaseAgent):
             "threadId": self.thread_id,
             "input": [{"type": "text", "text": content}],
         }
+        if self._active_turn_id:
+            params["expectedTurnId"] = self._active_turn_id
         if self.options.model:
             params["model"] = self.options.model
         if self.plan_mode:
@@ -237,7 +253,20 @@ class CodexAgent(BaseAgent):
                 },
             }
 
-        await self._rpc_request("turn/start", params)
+        result = await self._rpc_request("turn/start", params)
+        if result and isinstance(result, dict):
+            turn_id = self._extract_turn_id(result)
+            if turn_id:
+                self._active_turn_id = turn_id
+                LOG.debug(f"Captured turnId from turn/start result: {turn_id}")
+
+    async def steer(self, text: str) -> None:
+        """Send a steering message to the Agent (e.g. 'Implement this plan')"""
+        if not self._is_connected or not self.thread_id:
+            raise RuntimeError("Client is not connected or no active thread.")
+
+        LOG.info(f"Steering agent: {text}")
+        await self.send_message(text)
 
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
@@ -343,10 +372,19 @@ class CodexAgent(BaseAgent):
         params = data.get("params", {})
 
         if method == "turn/started":
-            self._active_turn_id = params.get("turnId")
+            turn_id = self._extract_turn_id(params)
+            self._active_turn_id = turn_id
+            await self._message_queue.put(
+                Message("turn_started", content={"turnId": turn_id})
+            )
 
         elif method == "turn/completed":
-            self._active_turn_id = None
+            # Update active turn ID if provided in completion
+            turn_id = self._extract_turn_id(params)
+            if turn_id:
+                self._active_turn_id = turn_id
+            # We keep self._active_turn_id here so it can be used as expectedTurnId
+            # for the next turn or steering.
             if self.plan_mode and self._plan_text:
                 await self._message_queue.put(
                     Message(MessageType.PLAN_DELTA.value, content=self._plan_text)

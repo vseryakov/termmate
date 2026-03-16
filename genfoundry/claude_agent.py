@@ -190,6 +190,10 @@ class ClaudeCodeAgent(BaseAgent):
 
         await self._write_json(message)
 
+    async def steer(self, text: str) -> None:
+        """Steering is not yet implemented for Claude CLI."""
+        pass
+
     async def set_permission_mode(self, mode: str) -> None:
         """
         Change permission mode during conversation.

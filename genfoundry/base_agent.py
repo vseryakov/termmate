@@ -128,6 +128,11 @@ class BaseAgent(abc.ABC):
         pass
 
     @abc.abstractmethod
+    async def steer(self, text: str) -> None:
+        """Send a steering message to the Agent (e.g. 'Implement this plan')"""
+        pass
+
+    @abc.abstractmethod
     async def disconnect(self) -> None:
         """Disconnect and clean up resources"""
         pass
