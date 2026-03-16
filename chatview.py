@@ -534,7 +534,7 @@ class PermissionPanel:
             self.diff_data[request_id] = (old_text, new_text, name)
             return f'📄 <a href="show_diff" class="file-link">{name}</a>'
 
-        elif tool_name == "ExitPlanMode":
+        elif tool_name in ("ExitPlanMode", "CodexImplementPlan"):
             plan = input_data.get("plan", "")
             first_line = plan.split("\n")[0] if plan else "Empty Plan"
             self.diff_data[request_id] = ("", plan, "Implementation Plan")
@@ -609,6 +609,8 @@ class PermissionPanel:
         if approve_mode in (ApproveMode.DEFAULT.value, ApproveMode.ALLOW_EDIT.value):
             allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
 
+        allow_btn_text = "Implement the Plan" if tool_name in ("ExitPlanMode", "CodexImplementPlan") else "Allow"
+
         return f"""
         <body id="permission-{request_id}">
             <style>
@@ -676,7 +678,7 @@ class PermissionPanel:
                 <div class="header">Tool Permission: {tool_name}</div>
                 <div class="content">{display_content}</div>
                 <div class="actions">
-                    <a href="allow" class="btn btn-allow">Allow</a>
+                    <a href="allow" class="btn btn-allow">{allow_btn_text}</a>
                     <a href="deny" class="btn btn-deny">Deny</a>
                     {allow_chat_btn}
                 </div>
@@ -982,18 +984,14 @@ class ChatMessageProcessor:
                 if self._plan_text:
                     plan_text = self._plan_text
                     self._plan_text = ""
-                    def open_plan(pt=plan_text):
-                        plan_view = self.session.window.new_file()
-                        plan_view.set_name("Implementation Plan")
-                        plan_view.run_command("append", {"characters": pt})
-                        plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
-                        plan_view.set_scratch(True)
+
                     self.append_content("\n")
-                    sublime.set_timeout(open_plan, 0)
+                    self.append_content(plan_text)
+                    self.append_content("\n")
 
                     # Add Implement button if in plan mode
                     if self.session.agent_thread and self.session.agent_thread.anthropic_config.get("plan_mode"):
-                        self.session.show_implement_plan_button()
+                        sublime.set_timeout(lambda pt=plan_text: self.session.show_implement_plan_button(pt), 0)
 
             elif message.type == "control_response":
                 if hasattr(message, "content") and isinstance(message.content, dict):
@@ -1207,6 +1205,13 @@ class ChatSession:
         if request_id in self.permission_requests:
             tool_name, input_data = self.permission_requests[request_id]
 
+            if tool_name == "CodexImplementPlan":
+                if action in ("allow", "allow_chat"):
+                    self.window.run_command("chat_view_implement_plan")
+                self.clear_permission_phantom(request_id)
+                del self.permission_requests[request_id]
+                return
+
             if action == "allow":
                 response_data = {
                     "behavior": "allow",
@@ -1259,50 +1264,11 @@ class ChatSession:
         if self.agent_thread:
             self.agent_thread.stop()
 
-    def show_implement_plan_button(self):
-        """Show a phantom button to trigger plan implementation."""
-        # Use a region at the very end of the chat history before the input prompt
-        input_start = self.chat_view.settings().get(CHAT_INPUT_START, self.chat_view.size())
-        region = sublime.Region(input_start - 1, input_start)
-
-        html = """
-        <body id="chatview-implement-plan">
-            <style>
-                .btn-row {
-                    margin: 10px 0;
-                }
-                .btn {
-                    display: inline-block;
-                    text-decoration: none;
-                    padding: 4px 8px;
-                    border-radius: 3px;
-                    font-weight: bold;
-                }
-                .btn-allow {
-                    background-color: var(--greenish);
-                    color: var(--background);
-                }
-            </style>
-            <div class="btn-row">
-                <a href="implement" class="btn btn-allow">Implement this plan</a>
-            </div>
-        </body>
-        """
-
-        def on_navigate(href):
-            if href == "implement":
-                self.window.run_command("chat_view_implement_plan")
-
-        # Append to our list of buttons
-        self.implement_plan_buttons.append(sublime.Phantom(
-            region,
-            html,
-            sublime.LAYOUT_BLOCK,
-            on_navigate
-        ))
-
-        # Update the phantom set
-        sublime.set_timeout(lambda: self.implement_plan_phantoms.update(self.implement_plan_buttons), 0)
+    def show_implement_plan_button(self, plan_text=""):
+        """Show a phantom button to trigger plan implementation via PermissionPanel."""
+        request_id = f"codex_plan_{id(self)}"
+        self.permission_requests[request_id] = ("CodexImplementPlan", {"plan": plan_text})
+        self.permission_panel.show(request_id, "CodexImplementPlan", {"plan": plan_text})
 
     @property
     def plan_mode(self):
