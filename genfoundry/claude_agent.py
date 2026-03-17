@@ -162,13 +162,14 @@ class ClaudeCodeAgent(BaseAgent):
         if prompt:
             await self.send_message(prompt)
 
-    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
+    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None, proceed_plan: bool = False) -> None:
         """
         Send a user message to Claude.
 
         Args:
             content: The message content to send
             parent_tool_use_id: Optional parent tool use ID for tool results
+            proceed_plan: Optional flag to temporarily disable plan mode for this message
         """
         if not self.is_connected:
             raise RuntimeError("Client is not connected. Call connect() first.")
@@ -190,7 +191,7 @@ class ClaudeCodeAgent(BaseAgent):
 
         await self._write_json(message)
 
-    async def steer(self, text: str) -> None:
+    async def steer(self, text: str, proceed_plan: bool = False) -> None:
         """Steering is not yet implemented for Claude CLI."""
         pass
 

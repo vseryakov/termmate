@@ -247,16 +247,16 @@ class AgentThread(threading.Thread):
             if text:
                 await self.agent.send_message(text)
 
-    async def _steer(self, text):
+    async def _steer(self, text, proceed_plan=False):
         """Send steering message to agent."""
         if self.agent:
-            await self.agent.steer(text)
+            await self.agent.steer(text, proceed_plan=proceed_plan)
 
-    def steer(self, text):
+    def steer(self, text, proceed_plan=False):
         """Proxy steer call through the loop."""
         if self.loop and self.running:
             self.loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._steer(text))
+                lambda: asyncio.create_task(self._steer(text, proceed_plan=proceed_plan))
             )
 
     @property
@@ -988,7 +988,7 @@ class ChatMessageProcessor:
 
                     self.append_content("\n")
                     self.append_content(plan_text)
-                    self.append_content("\n")
+                    self.append_content("\n\n")
 
                     # Add Implement button if in plan mode
                     if self.session.agent_thread and self.session.agent_thread.anthropic_config.get("plan_mode"):
@@ -1293,9 +1293,9 @@ class ChatSession:
         self.message_processor._plan_text = ""
         self.agent_thread.send(user_input)
 
-    def steer(self, text):
+    def steer(self, text, proceed_plan=False):
         """Send steering message to agent."""
-        self.agent_thread.steer(text)
+        self.agent_thread.steer(text, proceed_plan=proceed_plan)
 
     def add_prompt_highlight(self, region):
         """Add a gutter highlight to the specified prompt region."""
@@ -2274,12 +2274,14 @@ class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
 
 class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
     """
-    Trigger the 'Implement this plan' steering message.
+    Trigger the 'Implement the plan.' steering message.
     """
     def run(self):
         window_id = self.window.id()
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             sublime.status_message("Implementing plan...")
-            session.steer("Implement this plan")
+            # For Codex, we must explicitly exit Plan mode to execute.
+            # We use proceed_plan=True to signal CodexAgent to switch mode to 'default' for this turn.
+            session.steer("Implement the plan.", proceed_plan=True)
 

@@ -118,7 +118,7 @@ class BaseAgent(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
+    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None, proceed_plan: bool = False) -> None:
         """Send a message/prompt to the Agent"""
         pass
 
@@ -128,7 +128,7 @@ class BaseAgent(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def steer(self, text: str) -> None:
+    async def steer(self, text: str, proceed_plan: bool = False) -> None:
         """Send a steering message to the Agent (e.g. 'Implement this plan')"""
         pass
 

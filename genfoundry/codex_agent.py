@@ -228,7 +228,7 @@ class CodexAgent(BaseAgent):
             return turn.get("id")
         return None
 
-    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None) -> None:
+    async def send_message(self, content: str, parent_tool_use_id: Optional[str] = None, proceed_plan: bool = False) -> None:
         """Send a user message to Codex by starting a new turn on the thread."""
         if not self._is_connected:
             raise RuntimeError("Client is not connected. Call connect() first.")
@@ -244,9 +244,19 @@ class CodexAgent(BaseAgent):
             params["expectedTurnId"] = self._active_turn_id
         if self.options.model:
             params["model"] = self.options.model
-        if self.plan_mode:
+
+        # Determine the target collaboration mode for this turn.
+        # - If proceed_plan is True, we must explicitly exit Plan mode to execute.
+        # - Otherwise, if self.plan_mode is True, we ensure we are in Plan mode.
+        target_mode = None
+        if proceed_plan:
+            target_mode = "default"
+        elif self.plan_mode:
+            target_mode = "plan"
+
+        if target_mode:
             params["collaborationMode"] = {
-                "mode": "plan",
+                "mode": target_mode,
                 "settings": {
                     "model": self.options.model,
                     "developer_instructions": None,
@@ -260,13 +270,13 @@ class CodexAgent(BaseAgent):
                 self._active_turn_id = turn_id
                 LOG.debug(f"Captured turnId from turn/start result: {turn_id}")
 
-    async def steer(self, text: str) -> None:
+    async def steer(self, text: str, proceed_plan: bool = False) -> None:
         """Send a steering message to the Agent (e.g. 'Implement this plan')"""
         if not self._is_connected or not self.thread_id:
             raise RuntimeError("Client is not connected or no active thread.")
 
-        LOG.info(f"Steering agent: {text}")
-        await self.send_message(text)
+        LOG.info(f"Steering agent: {text} (proceed_plan={proceed_plan})")
+        await self.send_message(text, proceed_plan=proceed_plan)
 
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
