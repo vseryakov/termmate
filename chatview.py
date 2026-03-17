@@ -524,6 +524,20 @@ class PermissionPanel:
                 .replace(">", "&gt;")
                 .replace('"', "&quot;"))
 
+    def _open_or_focus_plan(self, request_id, plan, name):
+        """Open a new plan view or focus an existing one for this request."""
+        for v in self.window.views():
+            if v.settings().get("chatview_plan_request_id") == request_id:
+                self.window.focus_view(v)
+                return
+
+        plan_view = self.window.new_file()
+        plan_view.set_name(name)
+        plan_view.settings().set("chatview_plan_request_id", request_id)
+        plan_view.run_command("append", {"characters": plan})
+        plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
+        plan_view.set_scratch(True)
+
     def _prepare_display_content(self, request_id, tool_name, input_data):
         """Prepare the display content for a permission request."""
         if tool_name == "Edit":
@@ -539,14 +553,8 @@ class PermissionPanel:
             first_line = plan.split("\n")[0] if plan else "Empty Plan"
             self.diff_data[request_id] = ("", plan, "Implementation Plan")
 
-            # Automatically open the plan in a new view
-            def open_plan():
-                plan_view = self.window.new_file()
-                plan_view.set_name("Implementation Plan")
-                plan_view.run_command("append", {"characters": plan})
-                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
-                plan_view.set_scratch(True)
-            sublime.set_timeout(open_plan, 0)
+            # Automatically open or focus the plan in a new view
+            sublime.set_timeout(lambda: self._open_or_focus_plan(request_id, plan, "Implementation Plan"), 0)
 
             return (
                 f'📄 <a href="show_plan" class="file-link">plan</a>\n\n'
@@ -696,11 +704,7 @@ class PermissionPanel:
         elif action == "show_plan":
             if request_id in self.diff_data:
                 _, plan, name = self.diff_data[request_id]
-                plan_view = self.window.new_file()
-                plan_view.set_name(name)
-                plan_view.run_command("append", {"characters": plan})
-                plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
-                plan_view.set_scratch(True)
+                self._open_or_focus_plan(request_id, plan, name)
             return
 
         # For allow/deny actions, delegate to the callback
