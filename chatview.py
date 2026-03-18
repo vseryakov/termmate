@@ -1086,8 +1086,12 @@ class ChatMessageProcessor:
                     diffs.append(diff_text.rstrip())
 
             if diffs:
-                diff_blocks = "\n\n".join(f"```diff\n{d}\n```" for d in diffs)
-                return header + "\n\n" + diff_blocks
+                diff_blocks = []
+                for d in diffs:
+                    block_content = f"```diff\n{d}\n```"
+                    indented_block = "\n".join(" " + line for line in block_content.splitlines())
+                    diff_blocks.append(indented_block)
+                return header + "\n\n" + "\n\n".join(diff_blocks)
 
             return header
         else:
