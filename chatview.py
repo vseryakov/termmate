@@ -1,6 +1,7 @@
 import logging
 import enum
 import os
+import difflib
 
 import asyncio
 import threading
@@ -1013,6 +1014,13 @@ class ChatMessageProcessor:
                     if models:
                         self.session.available_models = models
 
+    def _render_diff_block(self, diff_text):
+        """Wraps diff text in an indented markdown code block."""
+        if not diff_text:
+            return ""
+        block_content = f"```diff\n{diff_text.rstrip()}\n```"
+        return "\n".join(" " + line for line in block_content.splitlines())
+
     def _format_tool_block(self, block):
         """Format a tool use block into a string."""
         name = block.get("name")
@@ -1051,7 +1059,25 @@ class ChatMessageProcessor:
                     rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
                 except Exception:
                     rel_path = file_path
-                return f"⏺ {name} {rel_path}"
+                header = f"⏺ {name} {rel_path}"
+
+                # Render diff for Edit
+                if name == "Edit" and "old_string" in input_data and "new_string" in input_data:
+                    old_lines = input_data["old_string"].splitlines(keepends=True)
+                    new_lines = input_data["new_string"].splitlines(keepends=True)
+
+                    diff_lines = list(difflib.unified_diff(
+                        old_lines, new_lines,
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}"
+                    ))
+
+                    if len(diff_lines) > 2:
+                        # Skip --- and +++ lines
+                        diff_text = "".join(diff_lines[2:])
+                        return header + "\n\n" + self._render_diff_block(diff_text)
+
+                return header
         elif name in ("Grep", "Glob"):
             pattern = input_data.get("pattern")
             if pattern:
@@ -1083,15 +1109,12 @@ class ChatMessageProcessor:
             for change in changes:
                 diff_text = change.get("diff") or change.get("patch") or change.get("unified_diff")
                 if diff_text:
-                    diffs.append(diff_text.rstrip())
+                    diff_blocks = self._render_diff_block(diff_text)
+                    if diff_blocks:
+                        diffs.append(diff_blocks)
 
             if diffs:
-                diff_blocks = []
-                for d in diffs:
-                    block_content = f"```diff\n{d}\n```"
-                    indented_block = "\n".join(" " + line for line in block_content.splitlines())
-                    diff_blocks.append(indented_block)
-                return header + "\n\n" + "\n\n".join(diff_blocks)
+                return header + "\n\n" + "\n\n".join(diffs)
 
             return header
         else:
