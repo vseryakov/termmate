@@ -1076,9 +1076,20 @@ class ChatMessageProcessor:
             return "⏺ command"
         elif name == "file_change":
             filenames = block.get("filenames", [])
-            if filenames:
-                return f"⏺ file_change ({', '.join(filenames)})"
-            return "⏺ file_change"
+            header = f"⏺ file_change ({', '.join(filenames)})" if filenames else "⏺ file_change"
+
+            changes = block.get("changes", [])
+            diffs = []
+            for change in changes:
+                diff_text = change.get("diff") or change.get("patch") or change.get("unified_diff")
+                if diff_text:
+                    diffs.append(diff_text.rstrip())
+
+            if diffs:
+                diff_blocks = "\n\n".join(f"```diff\n{d}\n```" for d in diffs)
+                return header + "\n\n" + diff_blocks
+
+            return header
         else:
             return f"⏺ {name}" if name else ""
 
