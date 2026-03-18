@@ -992,7 +992,7 @@ class ChatMessageProcessor:
 
                     self.append_content("\n")
                     self.append_content(plan_text)
-                    self.append_content("\n\n")
+                    self.append_content("\n")
 
                     # Add Implement button if in plan mode
                     if self.session.agent_thread and self.session.agent_thread.anthropic_config.get("plan_mode"):
@@ -2285,6 +2285,16 @@ class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
             sublime.status_message("Implementing plan...")
+
+            # Get position before appending
+            input_start = session.chat_view.settings().get(CHAT_INPUT_START, 0)
+            # Display implementation message in chat history
+            session.chat_view.run_command("chat_output_append", {"text": "\nimplement the plan\n\n"})
+
+            # Add gutter highlight mimicking user prompt
+            highlight_region = sublime.Region(input_start, input_start)
+            session.add_prompt_highlight(highlight_region)
+
             # For Codex, we must explicitly exit Plan mode to execute.
             # We use proceed_plan=True to signal CodexAgent to switch mode to 'default' for this turn.
             session.steer("Implement the plan.", proceed_plan=True)
