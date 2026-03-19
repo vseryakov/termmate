@@ -501,7 +501,7 @@ class CodexAgent(BaseAgent):
             tool_msg = Message(
                 MessageType.TOOL_USE.value,
                 content={
-                    "name": "file_change",
+                    "name": "fileChange",
                     "changes": changes,
                     "filenames": filenames,
                     "status": item.get("status"),
@@ -576,7 +576,7 @@ class CodexAgent(BaseAgent):
         if processed_diff:
             input_data["processed_diff"] = processed_diff
 
-        approved = await self._emit_approval_request(approval_id, "file_change", input_data)
+        approved = await self._emit_approval_request(approval_id, "fileChange", input_data)
         decision = "accept" if approved else "decline"
         await self._respond_to_server_request(request_id, {"decision": decision})
 

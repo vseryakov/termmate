@@ -583,7 +583,7 @@ class PermissionPanel:
                 display += f'\n<span style="opacity:0.6">cwd: {self._html_escape(cwd)}</span>'
             return display
 
-        elif tool_name == "file_change":
+        elif tool_name == "fileChange":
             processed_diff = input_data.get("processed_diff")
             if not processed_diff:
                 return f"<b>{tool_name}</b> (no changes)"
@@ -1100,9 +1100,9 @@ class ChatMessageProcessor:
                 else:
                     return f"⏺ command ({command})"
             return "⏺ command"
-        elif name == "file_change":
+        elif name == "fileChange":
             filenames = block.get("filenames", [])
-            header = f"⏺ file_change ({', '.join(filenames)})" if filenames else "⏺ file_change"
+            header = f"⏺ fileChange ({', '.join(filenames)})" if filenames else "⏺ fileChange"
 
             changes = block.get("changes", [])
             diffs = []
@@ -1114,7 +1114,7 @@ class ChatMessageProcessor:
                         diffs.append(diff_blocks)
 
             if diffs:
-                return header + "\n\n" + "\n\n".join(diffs)
+                return header + "\n" + "\n\n".join(diffs)
 
             return header
         else:
