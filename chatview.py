@@ -525,12 +525,17 @@ class PermissionPanel:
                 .replace(">", "&gt;")
                 .replace('"', "&quot;"))
 
-    def _open_or_focus_plan(self, request_id, plan, name):
-        """Open a new plan view or focus an existing one for this request."""
+    def _focus_plan_if_exists(self, request_id):
+        """Focus an existing plan view for this request and return True if found."""
         for v in self.window.views():
             if v.settings().get("chatview_plan_request_id") == request_id:
                 self.window.focus_view(v)
-                return
+                return True
+        return False
+
+    def _open_plan(self, request_id, plan, name, background=False):
+        """Open a new plan view for this request."""
+        active_view = self.window.active_view()
 
         plan_view = self.window.new_file()
         plan_view.set_name(name)
@@ -538,6 +543,9 @@ class PermissionPanel:
         plan_view.run_command("append", {"characters": plan})
         plan_view.set_syntax_file("Packages/Markdown/Markdown.sublime-syntax")
         plan_view.set_scratch(True)
+
+        if background and active_view:
+            self.window.focus_view(active_view)
 
     def _prepare_display_content(self, request_id, tool_name, input_data):
         """Prepare the display content for a permission request."""
@@ -554,8 +562,8 @@ class PermissionPanel:
             first_line = plan.split("\n")[0] if plan else "Empty Plan"
             self.diff_data[request_id] = ("", plan, "Implementation Plan")
 
-            # Automatically open or focus the plan in a new view
-            sublime.set_timeout(lambda: self._open_or_focus_plan(request_id, plan, "Implementation Plan"), 0)
+            # Automatically open the plan in a new view in the background
+            sublime.set_timeout(lambda: self._open_plan(request_id, plan, "Implementation Plan", background=True), 0)
 
             return (
                 f'📄 <a href="show_plan" class="file-link">plan</a>\n\n'
@@ -705,7 +713,8 @@ class PermissionPanel:
         elif action == "show_plan":
             if request_id in self.diff_data:
                 _, plan, name = self.diff_data[request_id]
-                self._open_or_focus_plan(request_id, plan, name)
+                if not self._focus_plan_if_exists(request_id):
+                    self._open_plan(request_id, plan, name)
             return
 
         # For allow/deny actions, delegate to the callback
