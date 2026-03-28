@@ -61,6 +61,21 @@ def plugin_loaded():
     sublime.set_timeout(_restore_chat_sessions, 500)
 
 
+def plugin_unloaded():
+    """
+    Called by Sublime Text when the plugin is unloaded.
+    Cleans up active ChatSessions.
+    """
+    for window_id, session in list(chatview_clients.items()):
+        try:
+            LOG.info(f"Stopping ChatView session for window {window_id} on unload")
+            session.stop()
+        except Exception as e:
+            LOG.error(f"Failed to stop ChatView session on plugin unload: {e}")
+
+    chatview_clients.clear()
+
+
 def _restore_chat_sessions():
     """Scan all windows for orphaned chat views and reconnect their agents."""
     for window in sublime.windows():
