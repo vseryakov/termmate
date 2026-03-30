@@ -1,6 +1,7 @@
 import logging
 import enum
 import os
+import shutil
 import difflib
 
 import asyncio
@@ -13,6 +14,28 @@ from . import plugin
 from .genfoundry import (
     ClaudeCodeAgent, CodexAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny)
+from .genfoundry.claude_agent import find_claude_cli
+from .genfoundry.codex_agent import find_codex_cli
+
+def get_available_agents(settings):
+    """Returns a list of available agents."""
+    available = []
+
+    # Check claude
+    claude_cmd = settings.get("claude_command")
+    if claude_cmd and shutil.which(claude_cmd):
+        available.append("claude")
+    elif shutil.which("claude") or find_claude_cli():
+        available.append("claude")
+
+    # Check codex
+    codex_cmd = settings.get("codex_command")
+    if codex_cmd and shutil.which(codex_cmd):
+        available.append("codex")
+    elif shutil.which("codex") or find_codex_cli():
+        available.append("codex")
+
+    return available
 
 # Constants for gutter highlights
 PROMPT_HIGHLIGHT_KEY = "chatview_prompt_highlight"
@@ -1189,16 +1212,28 @@ class ChatSession:
         self.implement_plan_buttons = [] # List of (region, phantom) tuples
 
         self.message_processor = ChatMessageProcessor(self)
+        self.agent_thread = None
 
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        self.available_agents = get_available_agents(settings)
+
+        if not self.available_agents:
+            self.chat_view.run_command("chat_output_append", {
+                "text": f"\n\n⚠️ Error: No agent CLI found.\nPlease install Claude CLI (`npm install -g @anthropic-ai/claude-code`) or Codex CLI, or set their paths in {PACKAGE_NAME} settings.\n\n"
+            })
+            return
 
         # Determine agent provider early
         agent_provider = self.window.settings().get(CHAT_AGENT, settings.get("agent_provider", "claude"))
 
+        if agent_provider not in self.available_agents:
+            agent_provider = self.available_agents[0]
+            self.window.settings().set(CHAT_AGENT, agent_provider)
+
         # Load cli_path from settings (provider-specific only, no fallback to avoid mixing CLIs)
         cli_path = settings.get(f"{agent_provider}_command")
         if not cli_path:
-            cli_path = None  # Let the agent class find its own CLI via shutil.which()
+            cli_path = None  # Let the agent class find its own CLI
 
         # Use provider-specific model key so switching agents won't carry over incompatible models
         model = self.window.settings().get(f"chatview_model_{agent_provider}") or None
@@ -1354,6 +1389,11 @@ class ChatSession:
 
     def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
+        if not self.agent_thread:
+            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
+            self.stop_loading()
+            return
+
         if region:
             self.add_prompt_highlight(region)
         self.message_processor._plan_text = ""
@@ -1361,7 +1401,8 @@ class ChatSession:
 
     def steer(self, text, proceed_plan=False):
         """Send steering message to agent."""
-        self.agent_thread.steer(text, proceed_plan=proceed_plan)
+        if self.agent_thread:
+            self.agent_thread.steer(text, proceed_plan=proceed_plan)
 
     def add_prompt_highlight(self, region):
         """Add a gutter highlight to the specified prompt region."""
@@ -1381,6 +1422,9 @@ class ChatSession:
 
     def reset_session(self):
         """Reset the chat session by restarting the agent and notifying in UI."""
+        if not self.agent_thread:
+            return
+
         # Stop any ongoing loading animation
         self.stop_loading()
         self.clear_prompt_highlights()
@@ -1409,6 +1453,12 @@ class ChatSession:
             self.agent_thread = None
 
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        # Update available agents
+        self.available_agents = get_available_agents(settings)
+        if new_agent_provider not in self.available_agents:
+            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{new_agent_provider}' not found on system.\n\n"})
+            return
+
         cli_path = settings.get(f"{new_agent_provider}_command") or None
         model = self.window.settings().get(f"chatview_model_{new_agent_provider}") or None
 
@@ -1447,6 +1497,12 @@ class ChatSession:
             self.agent_thread = None
 
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        # Update available agents
+        self.available_agents = get_available_agents(settings)
+        if current_agent_provider not in self.available_agents:
+            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{current_agent_provider}' not found on system.\n\n"})
+            return
+
         cli_path = settings.get(f"{current_agent_provider}_command") or None
         model = self.window.settings().get(f"chatview_model_{current_agent_provider}") or None
 
@@ -1481,7 +1537,8 @@ class ChatSession:
         self.stop_loading()
         # support dynamic plan mode updates
         is_planning = (plan_mode == PlanMode.PLANNING)
-        self.agent_thread.update_config(plan_mode=is_planning)
+        if self.agent_thread:
+            self.agent_thread.update_config(plan_mode=is_planning)
         LOG.info(f"Dynamically updated plan mode to: {plan_mode}")
 
 
@@ -2140,17 +2197,22 @@ class ChatViewSetModelTextHandler(sublime_plugin.TextInputHandler):
 
 
 class ChatViewAgentProviderInputHandler(sublime_plugin.ListInputHandler):
-    def __init__(self, current_agent=None):
+    def __init__(self, current_agent=None, available_agents=None):
         self.current_agent = current_agent
+        self.available_agents = available_agents or ["claude", "codex"]
 
     def name(self):
         return "agent"
 
     def list_items(self):
-        items = [
-            ("claude: (Claude Code CLI by Anthropic)", "claude"),
-            ("codex: (Codex CLI by OpenAI)", "codex"),
-        ]
+        items = []
+        if "claude" in self.available_agents:
+            items.append(("claude: (Claude Code CLI by Anthropic)", "claude"))
+        if "codex" in self.available_agents:
+            items.append(("codex: (Codex CLI by OpenAI)", "codex"))
+
+        if not items:
+            items.append(("No agent CLI found", ""))
 
         if self.current_agent:
             for i, item in enumerate(items):
@@ -2164,7 +2226,7 @@ class ChatViewAgentProviderInputHandler(sublime_plugin.ListInputHandler):
         return "Select agent provider"
 
     def description(self, agent, text):
-        return f"Agent: {agent}"
+        return f"Agent: {agent}" if agent else "No agent available"
 
 
 class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
@@ -2186,7 +2248,22 @@ class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         current_agent = self.window.settings().get(CHAT_AGENT, "claude")
-        return ChatViewAgentProviderInputHandler(current_agent)
+        window_id = self.window.id()
+
+        if window_id in chatview_clients:
+            session = chatview_clients[window_id]
+            # use cached agents if available
+            if hasattr(session, "available_agents") and session.available_agents:
+                return ChatViewAgentProviderInputHandler(current_agent, session.available_agents)
+
+        # fetch from system if no session exists or agents not cached
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        available_agents = get_available_agents(settings)
+
+        if window_id in chatview_clients:
+            chatview_clients[window_id].available_agents = available_agents
+
+        return ChatViewAgentProviderInputHandler(current_agent, available_agents)
 
 
 class ChatViewSetModelCommand(sublime_plugin.WindowCommand):

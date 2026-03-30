@@ -21,7 +21,7 @@ from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent
 
 
-def _find_codex_cli() -> Optional[str]:
+def find_codex_cli() -> Optional[str]:
     """Search common default install locations for the codex CLI."""
     candidates = []
     if sys.platform == "win32":
@@ -50,7 +50,6 @@ def _find_codex_cli() -> Optional[str]:
     return None
 
 
-
 class CodexAgent(BaseAgent):
     """
     Client for interacting with Codex via "codex app-server" (JSON-RPC over stdio).
@@ -69,7 +68,7 @@ class CodexAgent(BaseAgent):
     def __init__(self, options: Optional[AgentOptions] = None):
         super().__init__(options)
         self.thread_id: Optional[str] = None
-        self.cli_path = self.options.cli_path or shutil.which("codex") or _find_codex_cli()
+        self.cli_path = self.options.cli_path or shutil.which("codex") or find_codex_cli()
         self._is_connected = False
         self.available_models: List[Dict[str, Any]] = []
 

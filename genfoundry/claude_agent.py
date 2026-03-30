@@ -22,7 +22,7 @@ from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent
 
 
-def _find_claude_cli() -> Optional[str]:
+def find_claude_cli() -> Optional[str]:
     """Search common default install locations for the claude CLI."""
     candidates = []
     if sys.platform == "win32":
@@ -76,7 +76,7 @@ class ClaudeCodeAgent(BaseAgent):
         self._permission_callback = self.options.can_use_tool
 
         # Find claude executable
-        self.cli_path = self.options.cli_path or shutil.which("claude") or _find_claude_cli()
+        self.cli_path = self.options.cli_path or shutil.which("claude") or find_claude_cli()
         if not self.cli_path:
             raise FileNotFoundError(
                 "Claude CLI not found. Please install it first:\n"
