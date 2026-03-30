@@ -1,3 +1,18 @@
-chatview for Sublime Text
-===========================
+TermMate for Sublime Text
+=========================
 
+Thank you for installing the TermMate!
+
+This plugin provides agentic coding CLIs (Claude Code and Codex) directly within Sublime Text.
+
+Getting Started:
+- Ensure the `claude` or `codex` command-line tool is installed on your system.
+- Authenticate the agents via your terminal:
+  - Claude Code: Run `claude /login` in your terminal.
+  - Codex: Run `codex login` in your terminal.
+- Open the command palette and type "TermMate: Start Chat".
+
+Data Privacy:
+By default, this plugin does not send your entire workspace to the agents. Only text you type in the chat, files you explicitly @-mention, and tool-driven context are sent to the AI service.
+
+For more information on features and configuration, see https://github.com/flashmodel/termmate#termmate
