@@ -45,7 +45,11 @@ Clone this repository into your Sublime Text `Packages` directory as `TermMate`.
 
 ### 4. Start Chat
 
-Open the Command Palette and search for `TermMate: Start Chat`. Alternatively, use the shortcut `Cmd+Alt+G` (macOS) or `Ctrl+Alt+G` (Windows/Linux) to start your first agentic coding session instantly.
+- Open the command palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
+- Type `TermMate: Start Chat` and press `Enter`.
+- A new view will open for the TermMate chat.
+- Type your message and press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux) to send.
+- Alternatively, you can use a shortcut to start the chat (see [Custom Keybindings](#custom-keybindings) below).
 
 ## Usage & Key Features
 
