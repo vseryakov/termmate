@@ -54,36 +54,46 @@ Clone this repository into your Sublime Text `Packages` directory as `TermMate`.
 ## Usage & Key Features
 
 **Quick Prompt Without Chat View**
+
 Use the command palette (`TermMate: Prompt`) to send a quick instruction to the agent without opening the chat view manually.
 
 **Clear Session**
+
 To reset the current conversation history and start a completely fresh context, open the command palette and run **`TermMate: Clear Session`**. This will reload the agent and clear its memory for the current workspace.
 
 **Set Working Space**
+
 Right-click on any folder in the sidebar and select **Set TermMate Working Space** to set the working directory for the agent. This affects the current working directory when agents execute commands or access files. You can also use the command palette.
 
 **Chat with Current File or Selection**
+
 You can right-click in any file, tab, and select **Chat with TermMate agent**. This will:
 - Open the TermMate chat view (if not already open).
 - Insert a reference to the file (`@filename`) or selected line range (`@filename#L1-10`) into the message prompt.
 - Tagged files will be automatically sent as context to the active agent.
 
 **Smart Completion**
+
 Type `@` in the chat view for real-time suggestions of files and workspace symbols.
 
 ### Advanced Control (Pro Features)
+
 TermMate provides deep integration with agentic workflows via the Command Palette:
 
 **Plan Mode**
+
 Toggle between **Fast** (direct execution) and **Planning** (deliberative reasoning) via `TermMate: Plan Mode`.
 
 **Approve Mode**
+
 Agents perform various actions (tools) like reading files, searching the web, or executing commands. You can control how much manual approval is required via the command palette: `TermMate: Approve Mode`
+
 - **Default**: Prompts for your approval by default.
 - **Allow Edit**: Automatically approves "safe" read/edit operations; still prompts for "risky" commands.
 - **Accept All**: Automatically approves all tool calls, including shell command execution for maximum autonomy.
 
 **Switch Agents & Model Selection**
+
 Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune performance by selecting specific LLM models for different tasks.
 
 ## Shortcuts & Commands
@@ -100,10 +110,10 @@ Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune pe
 
 ## Configuration
 
-Customize TermMate by editing your settings:
-`Preferences -> Package Settings -> TermMate -> Settings`
+Customize TermMate by editing your settings: `Preferences -> Package Settings -> TermMate -> Settings`
 
-While TermMate automatically detects most installation paths, you may need to configure them manually if:
+While TermMate automatically detects most agnet cli installation paths, you may need to configure them manually if:
+
 - You use a custom installation location not listed in the default paths.
 - You have multiple versions installed and want to pin a specific binary.
 - Automatic detection fails on your specific OS configuration.
@@ -112,6 +122,20 @@ While TermMate automatically detects most installation paths, you may need to co
 {
     "claude_command": "/path/to/your/custom/claude",
     "codex_command": "/path/to/your/custom/codex"
+}
+```
+
+The `env` configuration allows you to inject custom environment variables directly into the process when starting an agent CLI command. This is useful for providing API keys, custom base URLs, or passing specific environment values without altering your global system configuration.
+
+For example, to configure **OpenRouter** for Claude, you can provide your OpenRouter API key and base URL in the `env` section of your settings(ANTHROPIC_API_KEY should be empty in the case):
+
+```json
+{
+    "env": {
+        "ANTHROPIC_BASE_URL": "https://openrouter.ai/api/v1",
+        "ANTHROPIC_AUTH_TOKEN": "sk-openrouter-token",
+        "ANTHROPIC_API_KEY": ""
+    }
 }
 ```
 
