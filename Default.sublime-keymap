@@ -1,14 +1,5 @@
 [
     {
-        "keys": ["primary+alt+g"],
-        "command": "chat_view_cli",
-        "args": {},
-        "context":
-        [
-            { "key": "setting.is_widget", "operand": false }
-        ]
-    },
-    {
         "keys": ["primary+enter"],
         "command": "chat_view_send_input",
         "context":

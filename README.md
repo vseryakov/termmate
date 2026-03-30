@@ -10,7 +10,7 @@ TermMate is a powerful agentic coding design tool for Sublime Text, bringing the
 
 ### 1. Prerequisites
 
-TermMate relies on external coding agents. Install the required CLI tools:
+TermMate relies on external agent cli. Install the required CLI tools:
 
 **Claude Code:**
 ```bash
@@ -39,7 +39,7 @@ claude /login
 codex login
 ```
 
-### 3. Installation
+### 3. TermMate Installation
 
 Clone this repository into your Sublime Text `Packages` directory as `TermMate`.
 
@@ -86,8 +86,9 @@ Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune pe
 
 | Action | macOS | Windows/Linux | Command Palette |
 | :--- | :--- | :--- | :--- |
-| **Start New Chat** | `Cmd+Alt+G` | `Ctrl+Alt+G` | `TermMate: Start Chat` |
+| **Start New Chat** | - | - | `TermMate: Start Chat` |
 | **Send Message** | `Cmd+Enter` | `Ctrl+Enter` | - |
+| **Navigate Input History** | `Up` / `Down` | `Up` / `Down` | - |
 | **Mention File** | `@` | `@` | - |
 | **Set Workspace** | - | - | `TermMate: Set Working Directory` |
 | **Switch Mode** | - | - | `TermMate: Plan Mode` |
@@ -108,6 +109,24 @@ While TermMate automatically detects most installation paths, you may need to co
     "claude_command": "/path/to/your/custom/claude",
     "codex_command": "/path/to/your/custom/codex"
 }
+```
+
+**Custom Keybindings**
+
+By default, TermMate does not register a shortcut for `TermMate: Start Chat` to avoid conflicts. You can manually add a shortcut (like `Cmd+Alt+G` or `Ctrl+Alt+G`) by navigating to `Preferences -> Key Bindings` and adding the following configuration:
+
+```json
+[
+    {
+        "keys": ["primary+alt+g"],
+        "command": "chat_view_cli",
+        "args": {},
+        "context":
+        [
+            { "key": "setting.is_widget", "operand": false }
+        ]
+    }
+]
 ```
 
 ## 💡 Tips
