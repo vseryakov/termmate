@@ -143,6 +143,12 @@ class CodexAgent(BaseAgent):
         cmd = [self.cli_path, "app-server"]
 
         LOG.info(f"Starting Codex app-server: {' '.join(cmd)}")
+        
+        kwargs = {}
+        if sys.platform == "win32":
+            import subprocess
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
@@ -150,6 +156,7 @@ class CodexAgent(BaseAgent):
             stderr=asyncio.subprocess.PIPE,
             env=env,
             cwd=self.options.cwd,
+            **kwargs
         )
 
         self._is_connected = True

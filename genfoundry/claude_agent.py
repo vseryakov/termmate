@@ -139,6 +139,11 @@ class ClaudeCodeAgent(BaseAgent):
         if self.options.extra_env:
             env.update(self.options.extra_env)
 
+        kwargs = {}
+        if sys.platform == "win32":
+            import subprocess
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
         # Start subprocess
         self.process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -146,7 +151,8 @@ class ClaudeCodeAgent(BaseAgent):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
-            cwd=self.options.cwd
+            cwd=self.options.cwd,
+            **kwargs
         )
 
         self.is_connected = True
