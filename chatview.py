@@ -125,7 +125,7 @@ def _reconnect_chat_view(view):
     chatview_clients[window_id] = session
     # Restore the model phantom at the existing CHAT_INPUT_START position
     session.model_phantom.update(plan_mode=session.plan_mode)
-    view.run_command("chat_output_append", {"text": "\n\n[Reconnected after restart]\n"})
+    view.run_command("chat_view_output_append", {"text": "\n\n[Reconnected after restart]\n"})
     LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}")
 
 
@@ -1174,7 +1174,7 @@ class ChatMessageProcessor:
         formatted_text = self.markdown_formatter.format(text, flush=flush)
         if formatted_text:
             sublime.set_timeout(
-                lambda: self.session.chat_view.run_command("chat_output_append",
+                lambda: self.session.chat_view.run_command("chat_view_output_append",
                     {"text": formatted_text}),
                 0
             )
@@ -1182,7 +1182,7 @@ class ChatMessageProcessor:
     def append_error(self, error_msg):
         """Append error message to chat view."""
         sublime.set_timeout(
-            lambda: self.session.chat_view.run_command("chat_output_append",
+            lambda: self.session.chat_view.run_command("chat_view_output_append",
                 {"text": f"\\n\\nError: {error_msg}\\n"}),
             0
         )
@@ -1218,7 +1218,7 @@ class ChatSession:
         self.available_agents = get_available_agents(settings)
 
         if not self.available_agents:
-            self.chat_view.run_command("chat_output_append", {
+            self.chat_view.run_command("chat_view_output_append", {
                 "text": f"\n\n⚠️ Error: No agent CLI found.\nPlease install Claude CLI (`npm install -g @anthropic-ai/claude-code`) or Codex CLI, or set their paths in {PACKAGE_NAME} settings.\n\n"
             })
             return
@@ -1390,7 +1390,7 @@ class ChatSession:
     def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
         if not self.agent_thread:
-            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
+            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
             self.stop_loading()
             return
 
@@ -1432,11 +1432,11 @@ class ChatSession:
 
         # Show reset message in the history
         reset_msg = f"\n\n{PACKAGE_NAME} session reset...\n"
-        self.chat_view.run_command("chat_output_append", {"text": reset_msg})
+        self.chat_view.run_command("chat_view_output_append", {"text": reset_msg})
 
         cwd = get_best_dir(self.chat_view)
         if cwd:
-            self.chat_view.run_command("chat_output_append", {"text": f"cwd: {cwd}\n\n"})
+            self.chat_view.run_command("chat_view_output_append", {"text": f"cwd: {cwd}\n\n"})
 
         # Reset the agent (disconnect and reconnect)
         self.agent_thread.reset()
@@ -1456,7 +1456,7 @@ class ChatSession:
         # Update available agents
         self.available_agents = get_available_agents(settings)
         if new_agent_provider not in self.available_agents:
-            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{new_agent_provider}' not found on system.\n\n"})
+            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: Agent '{new_agent_provider}' not found on system.\n\n"})
             return
 
         cli_path = settings.get(f"{new_agent_provider}_command") or None
@@ -1479,7 +1479,7 @@ class ChatSession:
         LOG.info(f"Switched agent to: {new_agent_provider}")
 
         switch_msg = f"\n\n[Switched agent to: {new_agent_provider}]\n\n"
-        self.chat_view.run_command("chat_output_append", {"text": switch_msg})
+        self.chat_view.run_command("chat_view_output_append", {"text": switch_msg})
 
     def reload_agent(self, plan_mode=None):
         """Restart the current agent process, optionally with a new plan mode or resuming session."""
@@ -1500,7 +1500,7 @@ class ChatSession:
         # Update available agents
         self.available_agents = get_available_agents(settings)
         if current_agent_provider not in self.available_agents:
-            self.chat_view.run_command("chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{current_agent_provider}' not found on system.\n\n"})
+            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: Agent '{current_agent_provider}' not found on system.\n\n"})
             return
 
         cli_path = settings.get(f"{current_agent_provider}_command") or None
@@ -1530,7 +1530,7 @@ class ChatSession:
             msg = f"\n\n[Plan mode changed, resuming session {old_session_id}...]\n\n"
         else:
             msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
-        self.chat_view.run_command("chat_output_append", {"text": msg})
+        self.chat_view.run_command("chat_view_output_append", {"text": msg})
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
@@ -1555,7 +1555,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
                 if self.window.id() not in chatview_clients:
                     _reconnect_chat_view(view)
                 if initial_msg:
-                    view.run_command("chat_input_prompt", {"text": initial_msg})
+                    view.run_command("chat_view_input_prompt", {"text": initial_msg})
                 return
 
         # Create a new view
@@ -1587,7 +1587,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chatview_clients[window_id] = session
 
         # Show initial prompt (this will also update the model phantom)
-        chat_view.run_command("chat_input_prompt", {"text": initial_msg})
+        chat_view.run_command("chat_view_input_prompt", {"text": initial_msg})
 
 
 class ChatViewSendInputCommand(sublime_plugin.TextCommand):
@@ -1614,7 +1614,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         sublime.status_message("Sending message...")
 
         # Show input text and next prompt (simulated local echo/confirmation)
-        self.view.run_command("chat_input_prompt", {"text": ""})
+        self.view.run_command("chat_view_input_prompt", {"text": ""})
 
         # Send to session
         session = chatview_clients[window_id]
@@ -1939,7 +1939,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             })
 
 
-class ChatOutputAppendCommand(sublime_plugin.TextCommand):
+class ChatViewOutputAppendCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         input_start = self.view.settings().get(CHAT_INPUT_START, 0) - 1
@@ -1949,7 +1949,7 @@ class ChatOutputAppendCommand(sublime_plugin.TextCommand):
         self.view.show(self.view.size())
 
 
-class ChatInputPromptCommand(sublime_plugin.TextCommand):
+class ChatViewInputPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         self.view.insert(edit, self.view.size(), "\n\n\n")
@@ -2428,7 +2428,7 @@ class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
             # Get position before appending
             input_start = session.chat_view.settings().get(CHAT_INPUT_START, 0)
             # Display implementation message in chat history
-            session.chat_view.run_command("chat_output_append", {"text": "\nimplement the plan\n\n"})
+            session.chat_view.run_command("chat_view_output_append", {"text": "\nimplement the plan\n\n"})
 
             # Add gutter highlight mimicking user prompt
             highlight_region = sublime.Region(input_start, input_start)
