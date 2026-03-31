@@ -1140,12 +1140,13 @@ class ChatMessageProcessor:
         elif name == "command_execution":
             command = block.get("command", "")
             if command:
-                if "\n" in command:
-                    # Show only first line followed by ...
-                    first_line = command.split("\n")[0]
-                    return f"⏺ command ({first_line}...)"
-                else:
-                    return f"⏺ command ({command})"
+                lines = command.rstrip().splitlines()
+                if len(lines) > 1:
+                    first_line = lines[0]
+                    indented_rest = "\n".join("    " + line for line in lines[1:])
+                    return f"⏺ command ({first_line})\n\n{indented_rest}\n"
+                elif len(lines) == 1:
+                    return f"⏺ command ({lines[0]})"
             return "⏺ command"
         elif name == "fileChange":
             filenames = block.get("filenames", [])
