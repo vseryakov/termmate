@@ -1763,20 +1763,22 @@ class ChatViewListener(sublime_plugin.EventListener):
 
         # Handle move commands for history navigation
         if command_name == "move" and args and args.get("by") == "lines":
-            is_up = not args.get("forward", True)
-            if len(view.sel()) > 0:
-                sel = view.sel()[0]
-                if sel.empty():
-                    if is_up:
-                        row_sel, _ = view.rowcol(sel.begin())
-                        row_start, _ = view.rowcol(editable_start)
-                        if row_sel == row_start:
-                            return ("chat_view_history_up", {})
-                    else:
-                        row_sel, _ = view.rowcol(sel.end())
-                        row_last, _ = view.rowcol(view.size())
-                        if row_sel == row_last:
-                            return ("chat_view_history_down", {})
+            # Don't intercept if auto-complete is active, so user can select items
+            if not view.is_auto_complete_visible():
+                is_up = not args.get("forward", True)
+                if len(view.sel()) > 0:
+                    sel = view.sel()[0]
+                    if sel.empty():
+                        if is_up:
+                            row_sel, _ = view.rowcol(sel.begin())
+                            row_start, _ = view.rowcol(editable_start)
+                            if row_sel == row_start:
+                                return ("chat_view_history_up", {})
+                        else:
+                            row_sel, _ = view.rowcol(sel.end())
+                            row_last, _ = view.rowcol(view.size())
+                            if row_sel == row_last:
+                                return ("chat_view_history_down", {})
 
         # Handle deletion commands - block if they affect content before prompt
         delete_commands = ("left_delete", "right_delete", "delete_word", "delete_word_backward",
