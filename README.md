@@ -174,7 +174,9 @@ All communication happens via the respective CLI tools (`claude` or `codex`) ins
 
 ## License
 
-This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+TermMate is provided under the **Apache License, Version 2.0** with the **Commons Clause** condition. 
 
-It is free for personal, research, and non-commercial organizations. **Commercial use is strictly prohibited.**
+This means it's free to use, modify, and redistribute the code for personal or internal use. However, **commercial resale or providing a paid service is strictly prohibited**.
+
+For complete details, please see the [LICENSE](LICENSE) file.
 
