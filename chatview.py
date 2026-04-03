@@ -245,6 +245,7 @@ class AgentThread(threading.Thread):
             can_use_tool=getattr(self, 'agent_options_callback', None),
             plan_mode=self.anthropic_config.get("plan_mode", False),
             allowed_tools=self.anthropic_config.get("allowed_tools"),
+            disallowed_tools=self.anthropic_config.get("disallowed_tools"),
             approve_mode=self.anthropic_config.get("approve_mode"),
             session_id=self.anthropic_config.get("session_id"),
             extra_env=self.anthropic_config.get("env")
@@ -1243,6 +1244,7 @@ class ChatSession:
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
+            "disallowed_tools": settings.get("disallowed_tools"),
             "agent_provider": agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "env": settings.get("env", {})
@@ -1467,6 +1469,7 @@ class ChatSession:
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
+            "disallowed_tools": settings.get("disallowed_tools"),
             "agent_provider": new_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "env": settings.get("env", {})
@@ -1514,6 +1517,7 @@ class ChatSession:
             "model": model,
             "plan_mode": plan_mode == PlanMode.PLANNING,
             "allowed_tools": settings.get("allowed_tools"),
+            "disallowed_tools": settings.get("disallowed_tools"),
             "agent_provider": current_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "session_id": old_session_id,

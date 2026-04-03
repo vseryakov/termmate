@@ -178,6 +178,11 @@ class CodexAgent(BaseAgent):
         if self.options.model:
             thread_params["model"] = self.options.model
 
+        if "request_user_input" in self.options.disallowed_tools:
+            thread_params["config"] = {
+                "features.default_mode_request_user_input": False
+            }
+
         # Map approve_mode to Codex approvalPolicy:
         #   "untrusted"  — always ask for approval (commands + file changes)
         #   "on-failure" — ask only when a command fails

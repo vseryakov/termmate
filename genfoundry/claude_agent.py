@@ -285,12 +285,24 @@ class ClaudeCodeAgent(BaseAgent):
         input_data = request.get("input", {})
         suggestions = request.get("permission_suggestions", [])
 
+        if tool_name in self.options.disallowed_tools:
+            response_data = {
+                "behavior": "deny",
+                "message": f"This is an automated run. You must make the decision yourself. Do not use {tool_name} Tool."
+            }
+            await self._send_control_response(request_id, response_data)
+            return
+
         # Create context
         context = ToolPermissionContext(suggestions=suggestions)
 
         try:
-            # Call the permission callback
-            result = await self._permission_callback(tool_name, input_data, context)
+            # Call the permission callback if available
+            if self._permission_callback:
+                result = await self._permission_callback(tool_name, input_data, context)
+            else:
+                # Default to allow if no callback is set
+                result = PermissionResultAllow()
 
             response_data = {}
             # Send response based on result
@@ -428,8 +440,8 @@ class ClaudeCodeAgent(BaseAgent):
             request = data.get("request", {})
             subtype = request.get("subtype")
 
-            if subtype == "can_use_tool" and self._permission_callback:
-                # Schedule permission callback handling
+            if subtype == "can_use_tool":
+                # Schedule permission callback handling or handle disallowed tools
                 asyncio.create_task(self._handle_permission_request(data))
 
             return Message(msg_type, content=data, msg_id=msg_id)

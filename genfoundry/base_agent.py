@@ -80,6 +80,7 @@ class AgentOptions:
         system_prompt: Optional[str] = None,
         max_turns: Optional[int] = None,
         allowed_tools: Optional[List[str]] = None,
+        disallowed_tools: Optional[List[str]] = None,
         permission_mode: str = "default",
         model: Optional[str] = None,
         can_use_tool: Optional[Callable] = None,
@@ -96,6 +97,7 @@ class AgentOptions:
         self.system_prompt = system_prompt
         self.max_turns = max_turns
         self.allowed_tools = allowed_tools or []
+        self.disallowed_tools = disallowed_tools or []
         self.permission_mode = permission_mode
         self.model = model
         self.can_use_tool = can_use_tool
