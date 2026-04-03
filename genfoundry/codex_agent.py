@@ -178,7 +178,7 @@ class CodexAgent(BaseAgent):
         if self.options.model:
             thread_params["model"] = self.options.model
 
-        if "request_user_input" in self.options.disallowed_tools:
+        if self.options.disallowed_tools and "AskUserQuestion" in self.options.disallowed_tools:
             thread_params["config"] = {
                 "features.default_mode_request_user_input": False
             }
@@ -595,6 +595,20 @@ class CodexAgent(BaseAgent):
         """Handle request for user input via tool/requestUserInput."""
         approval_id = str(request_id)
         LOG.info(f"User input request [rpc_id={request_id}]")
+
+        if self.options.disallowed_tools and "AskUserQuestion" in self.options.disallowed_tools:
+            LOG.info(f"AskUserQuestion is disabled, auto-denying [rpc_id={request_id}]")
+            formatted_response = {}
+            for q in params.get("questions", []):
+                q_id = q.get("id", q.get("question", ""))
+                formatted_response[q_id] = {
+                    "answers": [
+                        "This is an automated run. You must make the decision yourself. "
+                        "Do not use requestUserInput Tool."
+                    ]
+                }
+            await self._respond_to_server_request(request_id, {"answers": formatted_response})
+            return
 
         input_data = {"questions": params.get("questions", [])}
         # Send as AskUserQuestion to re-use Claude's existing UI logic

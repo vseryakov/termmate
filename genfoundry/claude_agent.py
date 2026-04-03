@@ -277,6 +277,18 @@ class ClaudeCodeAgent(BaseAgent):
         await self._write_json(init_request)
         LOG.debug(f"Sent initialization control_request: {request_id}")
 
+    async def _deny_disallowed_tool(self, request_id: str, tool_name: str) -> None:
+        if tool_name == "AskUserQuestion":
+            message = "This is an automated run. You must make the decision yourself. Do not use AskUserQuestion Tool."
+        else:
+            message = f"Tool '{tool_name}' is disallowed in this session."
+
+        response_data = {
+            "behavior": "deny",
+            "message": message
+        }
+        await self._send_control_response(request_id, response_data)
+
     async def _handle_permission_request(self, data: Dict[str, Any]) -> None:
         """Handle permission request from Claude CLI"""
         request_id = data.get("request_id")
@@ -285,24 +297,15 @@ class ClaudeCodeAgent(BaseAgent):
         input_data = request.get("input", {})
         suggestions = request.get("permission_suggestions", [])
 
-        if tool_name in self.options.disallowed_tools:
-            response_data = {
-                "behavior": "deny",
-                "message": f"This is an automated run. You must make the decision yourself. Do not use {tool_name} Tool."
-            }
-            await self._send_control_response(request_id, response_data)
-            return
-
         # Create context
         context = ToolPermissionContext(suggestions=suggestions)
 
         try:
             # Call the permission callback if available
-            if self._permission_callback:
-                result = await self._permission_callback(tool_name, input_data, context)
-            else:
-                # Default to allow if no callback is set
-                result = PermissionResultAllow()
+            if not self._permission_callback:
+                return None
+
+            result = await self._permission_callback(tool_name, input_data, context)
 
             response_data = {}
             # Send response based on result
@@ -394,7 +397,8 @@ class ClaudeCodeAgent(BaseAgent):
                         data = json.loads(line)
                         LOG.debug(f"claude msg: {data}")
                         message = self._parse_message(data)
-                        await self._message_queue.put(message)
+                        if message is not None:
+                            await self._message_queue.put(message)
                     except json.JSONDecodeError:
                         LOG.error(f"claude non-json msg: {line[:200]}...")
         except asyncio.CancelledError:
@@ -424,7 +428,7 @@ class ClaudeCodeAgent(BaseAgent):
         except Exception as e:
             pass  # Silently ignore stderr errors
 
-    def _parse_message(self, data: Dict[str, Any]) -> Message:
+    def _parse_message(self, data: Dict[str, Any]) -> Optional[Message]:
         """Parse raw JSON data into a Message object"""
         msg_type = data.get("type", "unknown")
         msg_id = data.get("id") or data.get("uuid")
@@ -441,8 +445,13 @@ class ClaudeCodeAgent(BaseAgent):
             subtype = request.get("subtype")
 
             if subtype == "can_use_tool":
-                # Schedule permission callback handling or handle disallowed tools
-                asyncio.create_task(self._handle_permission_request(data))
+                tool_name = request.get("tool_name")
+                if self.options.disallowed_tools and tool_name in self.options.disallowed_tools:
+                    asyncio.create_task(self._deny_disallowed_tool(request_id, tool_name))
+                    return None
+                # Schedule permission callback handling if callback exists
+                if self._permission_callback:
+                    asyncio.create_task(self._handle_permission_request(data))
 
             return Message(msg_type, content=data, msg_id=msg_id)
 

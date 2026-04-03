@@ -7,7 +7,7 @@
     "allowed_tools": ["Read", "Glob", "Grep", "TodoWrite", "WebFetch", "WebSearch", "Skill"],
 
     // List of tools to completely disable for the agents.
-    "disallowed_tools": ["request_user_input", "AskUserQuestion"],
+    "disable_ask_user": true,
     // Path or command name for the coding CLI executable.
     "claude_command": "",
     "codex_command": "",

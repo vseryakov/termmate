@@ -1240,11 +1240,13 @@ class ChatSession:
         # Use provider-specific model key so switching agents won't carry over incompatible models
         model = self.window.settings().get(f"chatview_model_{agent_provider}") or None
 
+        disallowed_tools = self._get_disallowed_tools(settings)
+
         anthropic_config = {
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
-            "disallowed_tools": settings.get("disallowed_tools"),
+            "disallowed_tools": disallowed_tools,
             "agent_provider": agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "env": settings.get("env", {})
@@ -1255,6 +1257,14 @@ class ChatSession:
             cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
         )
         self.agent_thread.start()
+
+    def _get_disallowed_tools(self, settings):
+        """Returns a list of disallowed tools based on settings."""
+        disallowed_tools = settings.get("disallowed_tools", [])
+        if settings.get("disable_ask_user", False):
+            if "AskUserQuestion" not in disallowed_tools:
+                disallowed_tools = disallowed_tools + ["AskUserQuestion"]
+        return disallowed_tools
 
     def show_permission_phantom(self, request_id, tool_name, input_data):
         """Show a phantom asking for permission."""
@@ -1465,11 +1475,13 @@ class ChatSession:
         cli_path = settings.get(f"{new_agent_provider}_command") or None
         model = self.window.settings().get(f"chatview_model_{new_agent_provider}") or None
 
+        disallowed_tools = self._get_disallowed_tools(settings)
+
         anthropic_config = {
             "model": model,
             "plan_mode": self.window.settings().get(CHAT_PLAN_MODE) == PlanMode.PLANNING.value,
             "allowed_tools": settings.get("allowed_tools"),
-            "disallowed_tools": settings.get("disallowed_tools"),
+            "disallowed_tools": disallowed_tools,
             "agent_provider": new_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "env": settings.get("env", {})
@@ -1513,11 +1525,13 @@ class ChatSession:
         if plan_mode is None:
             plan_mode = self.plan_mode
 
+        disallowed_tools = self._get_disallowed_tools(settings)
+
         anthropic_config = {
             "model": model,
             "plan_mode": plan_mode == PlanMode.PLANNING,
             "allowed_tools": settings.get("allowed_tools"),
-            "disallowed_tools": settings.get("disallowed_tools"),
+            "disallowed_tools": disallowed_tools,
             "agent_provider": current_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "session_id": old_session_id,
