@@ -1095,6 +1095,18 @@ class ChatMessageProcessor:
                 else:
                     return f"⏺ Read {rel_path}"
 
+        elif name in ("Agent", "Task"):
+            description = input_data.get("description", "")
+            subagent_type = input_data.get("subagent_type", "")
+            
+            parts = [f"⏺ {name}"]
+            if subagent_type:
+                parts.append(subagent_type)
+            if description:
+                parts.append(description)
+                
+            return " ".join(parts)
+
         elif name == "Bash":
             command = input_data.get("command", "")
             if command:
