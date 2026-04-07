@@ -28,7 +28,7 @@
                                 "command": "edit_settings",
                                 "args": {
                                     "base_file": "${packages}/TermMate/Default.sublime-keymap",
-                                    "default": "[\n\t{ \"keys\": [\"primary+alt+g\"], \"command\": \"chat_view_cli\" }\n]\n"
+                                    "default": "[\n\t{ \"keys\": [\"primary+alt+g\"], \"command\": \"term_chat_cli\" }\n]\n"
                                 }
                             }
                         ]

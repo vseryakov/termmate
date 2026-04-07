@@ -125,7 +125,7 @@ def _reconnect_chat_view(view):
     chatview_clients[window_id] = session
     # Restore the model phantom at the existing CHAT_INPUT_START position
     session.model_phantom.update(plan_mode=session.plan_mode)
-    view.run_command("chat_view_output_append", {"text": "\n\n[Reconnected after restart]\n"})
+    view.run_command("term_chat_output_append", {"text": "\n\n[Reconnected after restart]\n"})
     LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}")
 
 
@@ -500,11 +500,11 @@ class ModelPanel:
 
         def on_navigate(href):
             if href == "set_agent":
-                self.window.run_command("chat_view_set_agent")
+                self.window.run_command("term_chat_set_agent")
             elif href == "set_model":
-                self.window.run_command("chat_view_set_model")
+                self.window.run_command("term_chat_set_model")
             elif href == "toggle_plan":
-                self.window.run_command("chat_view_toggle_plan_mode")
+                self.window.run_command("term_chat_toggle_plan_mode")
 
         self.phantom_set.update([sublime.Phantom(
             region,
@@ -1188,7 +1188,7 @@ class ChatMessageProcessor:
         formatted_text = self.markdown_formatter.format(text, flush=flush)
         if formatted_text:
             sublime.set_timeout(
-                lambda: self.session.chat_view.run_command("chat_view_output_append",
+                lambda: self.session.chat_view.run_command("term_chat_output_append",
                     {"text": formatted_text}),
                 0
             )
@@ -1196,7 +1196,7 @@ class ChatMessageProcessor:
     def append_error(self, error_msg):
         """Append error message to chat view."""
         sublime.set_timeout(
-            lambda: self.session.chat_view.run_command("chat_view_output_append",
+            lambda: self.session.chat_view.run_command("term_chat_output_append",
                 {"text": f"\\n\\nError: {error_msg}\\n"}),
             0
         )
@@ -1232,7 +1232,7 @@ class ChatSession:
         self.available_agents = get_available_agents(settings)
 
         if not self.available_agents:
-            self.chat_view.run_command("chat_view_output_append", {
+            self.chat_view.run_command("term_chat_output_append", {
                 "text": f"\n\n⚠️ Error: No agent CLI found.\nPlease install Claude CLI (`npm install -g @anthropic-ai/claude-code`) or Codex CLI, or set their paths in {PACKAGE_NAME} settings.\n\n"
             })
             return
@@ -1334,7 +1334,7 @@ class ChatSession:
 
             if tool_name == "CodexImplementPlan":
                 if action in ("allow", "allow_chat"):
-                    self.window.run_command("chat_view_implement_plan")
+                    self.window.run_command("term_chat_implement_plan")
                 self.clear_permission_phantom(request_id)
                 del self.permission_requests[request_id]
                 return
@@ -1415,7 +1415,7 @@ class ChatSession:
     def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
         if not self.agent_thread:
-            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
+            self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
             self.stop_loading()
             return
 
@@ -1457,11 +1457,11 @@ class ChatSession:
 
         # Show reset message in the history
         reset_msg = f"\n\n{PACKAGE_NAME} session reset...\n"
-        self.chat_view.run_command("chat_view_output_append", {"text": reset_msg})
+        self.chat_view.run_command("term_chat_output_append", {"text": reset_msg})
 
         cwd = get_best_dir(self.chat_view)
         if cwd:
-            self.chat_view.run_command("chat_view_output_append", {"text": f"cwd: {cwd}\n\n"})
+            self.chat_view.run_command("term_chat_output_append", {"text": f"cwd: {cwd}\n\n"})
 
         # Reset the agent (disconnect and reconnect)
         self.agent_thread.reset()
@@ -1481,7 +1481,7 @@ class ChatSession:
         # Update available agents
         self.available_agents = get_available_agents(settings)
         if new_agent_provider not in self.available_agents:
-            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: Agent '{new_agent_provider}' not found on system.\n\n"})
+            self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{new_agent_provider}' not found on system.\n\n"})
             return
 
         cli_path = settings.get(f"{new_agent_provider}_command") or None
@@ -1507,7 +1507,7 @@ class ChatSession:
         LOG.info(f"Switched agent to: {new_agent_provider}")
 
         switch_msg = f"\n\n[Switched agent to: {new_agent_provider}]\n\n"
-        self.chat_view.run_command("chat_view_output_append", {"text": switch_msg})
+        self.chat_view.run_command("term_chat_output_append", {"text": switch_msg})
 
     def reload_agent(self, plan_mode=None):
         """Restart the current agent process, optionally with a new plan mode or resuming session."""
@@ -1528,7 +1528,7 @@ class ChatSession:
         # Update available agents
         self.available_agents = get_available_agents(settings)
         if current_agent_provider not in self.available_agents:
-            self.chat_view.run_command("chat_view_output_append", {"text": f"\n\n⚠️ Error: Agent '{current_agent_provider}' not found on system.\n\n"})
+            self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n⚠️ Error: Agent '{current_agent_provider}' not found on system.\n\n"})
             return
 
         cli_path = settings.get(f"{current_agent_provider}_command") or None
@@ -1561,7 +1561,7 @@ class ChatSession:
             msg = f"\n\n[Plan mode changed, resuming session {old_session_id}...]\n\n"
         else:
             msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
-        self.chat_view.run_command("chat_view_output_append", {"text": msg})
+        self.chat_view.run_command("term_chat_output_append", {"text": msg})
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
@@ -1573,7 +1573,7 @@ class ChatSession:
         LOG.info(f"Dynamically updated plan mode to: {plan_mode}")
 
 
-class ChatViewCliCommand(sublime_plugin.WindowCommand):
+class TermChatCliCommand(sublime_plugin.WindowCommand):
     """
     A Sublime Text plugin command for calling the ChatView
     """
@@ -1586,7 +1586,7 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
                 if self.window.id() not in chatview_clients:
                     _reconnect_chat_view(view)
                 if initial_msg:
-                    view.run_command("chat_view_input_prompt", {"text": initial_msg})
+                    view.run_command("term_chat_input_prompt", {"text": initial_msg})
                 return
 
         # Create a new view
@@ -1618,10 +1618,10 @@ class ChatViewCliCommand(sublime_plugin.WindowCommand):
         chatview_clients[window_id] = session
 
         # Show initial prompt (this will also update the model phantom)
-        chat_view.run_command("chat_view_input_prompt", {"text": initial_msg})
+        chat_view.run_command("term_chat_input_prompt", {"text": initial_msg})
 
 
-class ChatViewSendInputCommand(sublime_plugin.TextCommand):
+class TermChatSendInputCommand(sublime_plugin.TextCommand):
     """
     Handles the input submission (bound to Ctrl+Enter).
     """
@@ -1645,7 +1645,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         sublime.status_message("Sending message...")
 
         # Show input text and next prompt (simulated local echo/confirmation)
-        self.view.run_command("chat_view_input_prompt", {"text": ""})
+        self.view.run_command("term_chat_input_prompt", {"text": ""})
 
         # Send to session
         session = chatview_clients[window_id]
@@ -1656,7 +1656,7 @@ class ChatViewSendInputCommand(sublime_plugin.TextCommand):
         LOG.info(f"User enter prompt {user_input}")
 
 
-class ChatViewHistoryUpCommand(sublime_plugin.TextCommand):
+class TermChatHistoryUpCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         window = self.view.window()
         if not window or window.id() not in chatview_clients:
@@ -1684,7 +1684,7 @@ class ChatViewHistoryUpCommand(sublime_plugin.TextCommand):
         self.view.show(self.view.size())
 
 
-class ChatViewHistoryDownCommand(sublime_plugin.TextCommand):
+class TermChatHistoryDownCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         window = self.view.window()
         if not window or window.id() not in chatview_clients:
@@ -1712,6 +1712,7 @@ class ChatViewHistoryDownCommand(sublime_plugin.TextCommand):
         self.view.sel().clear()
         self.view.sel().add(sublime.Region(self.view.size()))
         self.view.show(self.view.size())
+
 
 
 class ChatViewListener(sublime_plugin.EventListener):
@@ -1803,12 +1804,12 @@ class ChatViewListener(sublime_plugin.EventListener):
                             row_sel, _ = view.rowcol(sel.begin())
                             row_start, _ = view.rowcol(editable_start)
                             if row_sel == row_start:
-                                return ("chat_view_history_up", {})
+                                return ("term_chat_history_up", {})
                         else:
                             row_sel, _ = view.rowcol(sel.end())
                             row_last, _ = view.rowcol(view.size())
                             if row_sel == row_last:
-                                return ("chat_view_history_down", {})
+                                return ("term_chat_history_down", {})
 
         # Handle deletion commands - block if they affect content before prompt
         delete_commands = ("left_delete", "right_delete", "delete_word", "delete_word_backward",
@@ -1972,7 +1973,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             })
 
 
-class ChatViewOutputAppendCommand(sublime_plugin.TextCommand):
+class TermChatOutputAppendCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         input_start = self.view.settings().get(CHAT_INPUT_START, 0) - 1
@@ -1982,7 +1983,7 @@ class ChatViewOutputAppendCommand(sublime_plugin.TextCommand):
         self.view.show(self.view.size())
 
 
-class ChatViewInputPromptCommand(sublime_plugin.TextCommand):
+class TermChatInputPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
         self.view.insert(edit, self.view.size(), "\n\n\n")
@@ -2004,7 +2005,7 @@ class ChatViewInputPromptCommand(sublime_plugin.TextCommand):
         self.view.show(end)
 
 
-class ChatViewAddContextCommand(sublime_plugin.TextCommand):
+class TermChatAddContextCommand(sublime_plugin.TextCommand):
     """
     Command to add current file context to the ChatView chat prompt.
     """
@@ -2039,7 +2040,7 @@ class ChatViewAddContextCommand(sublime_plugin.TextCommand):
 
         if not chat_view:
             # If no chat view, create one and pass the context tag immediately
-            window.run_command("chat_view_cli", {"initial_msg": context_tag})
+            window.run_command("term_chat_cli", {"initial_msg": context_tag})
         else:
             window.focus_view(chat_view)
             self._insert_tag(chat_view, context_tag)
@@ -2054,7 +2055,7 @@ class ChatViewAddContextCommand(sublime_plugin.TextCommand):
         chat_view.show(chat_view.size())
 
 
-class ChatViewPromptHandler(sublime_plugin.TextInputHandler):
+class TermChatPromptHandler(sublime_plugin.TextInputHandler):
     def name(self):
         return "prompt"
 
@@ -2065,7 +2066,7 @@ class ChatViewPromptHandler(sublime_plugin.TextInputHandler):
         return f"{PACKAGE_NAME}: " + text if text else f"{PACKAGE_NAME} Prompt"
 
 
-class ChatViewPromptCommand(sublime_plugin.WindowCommand):
+class TermChatPromptCommand(sublime_plugin.WindowCommand):
     def run(self, prompt):
         if not prompt:
             return
@@ -2080,19 +2081,19 @@ class ChatViewPromptCommand(sublime_plugin.WindowCommand):
         if chat_view:
             self.window.focus_view(chat_view)
             chat_view.run_command("insert", {"characters": prompt})
-            chat_view.run_command("chat_view_send_input")
+            chat_view.run_command("term_chat_send_input")
         else:
             # Start a new session and send immediately
-            self.window.run_command("chat_view_cli", {
+            self.window.run_command("term_chat_cli", {
                 "initial_msg": prompt,
                 "send_immediate": True
             })
 
     def input(self, args):
-        return ChatViewPromptHandler()
+        return TermChatPromptHandler()
 
 
-class ChatViewSetWorkspaceInputHandler(sublime_plugin.TextInputHandler):
+class TermChatSetWorkspaceInputHandler(sublime_plugin.TextInputHandler):
     def name(self):
         return "path"
 
@@ -2106,21 +2107,21 @@ class ChatViewSetWorkspaceInputHandler(sublime_plugin.TextInputHandler):
         return os.path.isdir(os.path.expanduser(text))
 
 
-class ChatViewSetWorkspaceInputCommand(sublime_plugin.WindowCommand):
+class TermChatSetWorkspaceInputCommand(sublime_plugin.WindowCommand):
     """
-    Command that asks for input and then calls ChatViewSetWorkspaceCommand.
+    Command that asks for input and then calls TermChatSetWorkspaceCommand.
     """
     def run(self, path):
         if path:
             full_path = os.path.expanduser(path)
             # Delegate to the existing command
-            self.window.run_command("chat_view_set_workspace", {"dirs": [full_path]})
+            self.window.run_command("term_chat_set_workspace", {"dirs": [full_path]})
 
     def input(self, args):
-        return ChatViewSetWorkspaceInputHandler()
+        return TermChatSetWorkspaceInputHandler()
 
 
-class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
+class TermChatSetWorkspaceCommand(sublime_plugin.WindowCommand):
     """
     Sets the active workspace for ChatView based on the selected folder in sidebar.
     """
@@ -2155,7 +2156,7 @@ class ChatViewSetWorkspaceCommand(sublime_plugin.WindowCommand):
         return bool(files or dirs)
 
 
-class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
+class TermChatClearSessionCommand(sublime_plugin.WindowCommand):
     """
     Clears the current chat session by disconnecting and reconnecting the agent.
     This resets the conversation history similar to Claude Code's reset session.
@@ -2177,7 +2178,7 @@ class ChatViewClearSessionCommand(sublime_plugin.WindowCommand):
         return self.window.id() in chatview_clients
 
 
-class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
+class TermChatSetModelListHandler(sublime_plugin.ListInputHandler):
     def __init__(self, current_model=None):
         self.current_model = current_model
 
@@ -2215,7 +2216,7 @@ class ChatViewSetModelListHandler(sublime_plugin.ListInputHandler):
         return f"Set Model: {value}"
 
 
-class ChatViewSetModelTextHandler(sublime_plugin.TextInputHandler):
+class TermChatSetModelTextHandler(sublime_plugin.TextInputHandler):
     def name(self):
         return "model"
 
@@ -2229,7 +2230,7 @@ class ChatViewSetModelTextHandler(sublime_plugin.TextInputHandler):
         return bool(text.strip())
 
 
-class ChatViewAgentProviderInputHandler(sublime_plugin.ListInputHandler):
+class TermChatAgentProviderInputHandler(sublime_plugin.ListInputHandler):
     def __init__(self, current_agent=None, available_agents=None):
         self.current_agent = current_agent
         self.available_agents = available_agents or ["claude", "codex"]
@@ -2262,7 +2263,7 @@ class ChatViewAgentProviderInputHandler(sublime_plugin.ListInputHandler):
         return f"Agent: {agent}" if agent else "No agent available"
 
 
-class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
+class TermChatSetAgentCommand(sublime_plugin.WindowCommand):
     """
     Sets the agent provider for ChatView sessions in the current window.
     """
@@ -2287,7 +2288,7 @@ class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
             session = chatview_clients[window_id]
             # use cached agents if available
             if hasattr(session, "available_agents") and session.available_agents:
-                return ChatViewAgentProviderInputHandler(current_agent, session.available_agents)
+                return TermChatAgentProviderInputHandler(current_agent, session.available_agents)
 
         # fetch from system if no session exists or agents not cached
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
@@ -2296,10 +2297,10 @@ class ChatViewSetAgentCommand(sublime_plugin.WindowCommand):
         if window_id in chatview_clients:
             chatview_clients[window_id].available_agents = available_agents
 
-        return ChatViewAgentProviderInputHandler(current_agent, available_agents)
+        return TermChatAgentProviderInputHandler(current_agent, available_agents)
 
 
-class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
+class TermChatSetModelCommand(sublime_plugin.WindowCommand):
     """
     Sets the model for ChatView sessions in the current window.
     """
@@ -2331,13 +2332,13 @@ class ChatViewSetModelCommand(sublime_plugin.WindowCommand):
                 agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
                 current_model = self.window.settings().get(f"chatview_model_{agent_provider}")
                 # Use ListInputHandler for dropdown selection
-                return ChatViewSetModelListHandler(current_model)
+                return TermChatSetModelListHandler(current_model)
 
         # Fallback to TextInputHandler for manual input
-        return ChatViewSetModelTextHandler()
+        return TermChatSetModelTextHandler()
 
 
-class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
+class TermChatPlanModeInputHandler(sublime_plugin.ListInputHandler):
     def __init__(self, current_mode=None):
         self.current_mode = current_mode
 
@@ -2365,7 +2366,7 @@ class ChatViewPlanModeInputHandler(sublime_plugin.ListInputHandler):
         return f"Plan Mode: {mode}"
 
 
-class ChatViewApproveModeInputHandler(sublime_plugin.ListInputHandler):
+class TermChatApproveModeInputHandler(sublime_plugin.ListInputHandler):
     def __init__(self, current_mode=None):
         self.current_mode = current_mode
 
@@ -2394,7 +2395,7 @@ class ChatViewApproveModeInputHandler(sublime_plugin.ListInputHandler):
         return "select approve mode on tool call"
 
 
-class ChatViewSetApproveModeCommand(sublime_plugin.WindowCommand):
+class TermChatSetApproveModeCommand(sublime_plugin.WindowCommand):
     """Set permission approve mode for the current ChatView session."""
     def run(self, mode):
         self.window.settings().set(CHAT_APPROVE_MODE, mode)
@@ -2403,11 +2404,11 @@ class ChatViewSetApproveModeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "mode" not in args:
             current_mode = self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value)
-            return ChatViewApproveModeInputHandler(current_mode)
+            return TermChatApproveModeInputHandler(current_mode)
         return None
 
 
-class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
+class TermChatTogglePlanModeCommand(sublime_plugin.WindowCommand):
     """
     Toggle plan mode for the current ChatView session.
     """
@@ -2433,11 +2434,11 @@ class ChatViewTogglePlanModeCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "mode" not in args:
             current_mode = self.window.settings().get(CHAT_PLAN_MODE, PlanMode.FAST.value)
-            return ChatViewPlanModeInputHandler(current_mode)
+            return TermChatPlanModeInputHandler(current_mode)
         return None
 
 
-class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
+class TermChatPermissionActionCommand(sublime_plugin.WindowCommand):
     """
     Handle permission actions from the phantom UI.
     """
@@ -2448,7 +2449,7 @@ class ChatViewPermissionActionCommand(sublime_plugin.WindowCommand):
             session.handle_permission_action(request_id, action)
 
 
-class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
+class TermChatImplementPlanCommand(sublime_plugin.WindowCommand):
     """
     Trigger the 'Implement the plan.' steering message.
     """
@@ -2461,7 +2462,7 @@ class ChatViewImplementPlanCommand(sublime_plugin.WindowCommand):
             # Get position before appending
             input_start = session.chat_view.settings().get(CHAT_INPUT_START, 0)
             # Display implementation message in chat history
-            session.chat_view.run_command("chat_view_output_append", {"text": "\nimplement the plan\n\n"})
+            session.chat_view.run_command("term_chat_output_append", {"text": "\nimplement the plan\n\n"})
 
             # Add gutter highlight mimicking user prompt
             highlight_region = sublime.Region(input_start, input_start)

@@ -147,7 +147,7 @@ By default, TermMate does not register a shortcut for `TermMate: Start Chat` to 
 [
     {
         "keys": ["primary+alt+g"],
-        "command": "chat_view_cli",
+        "command": "term_chat_cli",
         "args": {},
         "context":
         [

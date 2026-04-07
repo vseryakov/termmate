@@ -1,6 +1,6 @@
 [
     {
         "caption": "Chat with TermMate",
-        "command": "chat_view_add_context"
+        "command": "term_chat_add_context"
     }
 ]
