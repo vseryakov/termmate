@@ -603,8 +603,10 @@ class CodexAgent(BaseAgent):
                 q_id = q.get("id", q.get("question", ""))
                 formatted_response[q_id] = {
                     "answers": [
-                        "This is an automated run. You must make the decision yourself. "
+                        "This is an automated run. You are running in non-interactive mode."
                         "Do not use requestUserInput Tool."
+                        "You must choose the reasonable recommended option and "
+                        "proceed without asking."
                     ]
                 }
             await self._respond_to_server_request(request_id, {"answers": formatted_response})
