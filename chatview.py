@@ -118,13 +118,25 @@ def _reconnect_chat_view(view):
     if window_id in chatview_clients:
         return
 
+    settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+    share_folders = settings.get("share_workspace_folders", False)
+
     cwd = get_best_dir(view)
-    session = ChatSession(window, view, cwd)
+    add_dirs = get_all_folders(view) if share_folders else []
+
+    session = ChatSession(window, view, cwd, add_dirs=add_dirs)
     chatview_clients[window_id] = session
     # Restore the model phantom at the existing CHAT_INPUT_START position
     session.model_phantom.update(plan_mode=session.plan_mode)
     view.run_command("term_chat_output_append", {"text": "\n\n[Reconnected after restart]\n"})
-    LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}")
+    LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}, add_dirs={add_dirs}")
+
+
+def get_all_folders(view):
+    window = view.window()
+    if window:
+        return window.folders()
+    return []
 
 
 def get_best_dir(view):
@@ -135,7 +147,7 @@ def get_best_dir(view):
         if custom_cwd and os.path.isdir(custom_cwd):
             return custom_cwd
 
-        folders = window.folders()
+        folders = get_all_folders(view)
         if folders:
             return folders[0]
     return ""
@@ -211,12 +223,13 @@ class AgentThread(threading.Thread):
     """
     Background thread to run the asyncio Claude Agent.
     """
-    def __init__(self, cwd, on_message, cli_path=None, anthropic_config=None):
+    def __init__(self, cwd, on_message, cli_path=None, anthropic_config=None, add_dirs=None):
         super().__init__()
         self.cwd = cwd
         self.on_message = on_message
         self.cli_path = cli_path
         self.anthropic_config = anthropic_config or {}
+        self.add_dirs = add_dirs or []
         self.loop = None
         self.agent = None
         self.input_queue = None
@@ -238,6 +251,7 @@ class AgentThread(threading.Thread):
         """Main async loop for the agent."""
         options = AgentOptions(
             cwd=self.cwd,
+            add_dirs=self.add_dirs,
             cli_path=self.cli_path,
             model=self.anthropic_config.get("model"),
             can_use_tool=getattr(self, 'agent_options_callback', None),
@@ -917,15 +931,17 @@ class AskUserQuestionHandler:
             del self.session.permission_requests[self.request_id]
 
 
-
 class ChatSession:
     """
     Manages the state and UI for a single ChatView session.
     """
-    def __init__(self, window, view, cwd):
+    def __init__(self, window, view, cwd, add_dirs=None):
         self.window = window
         self.chat_view = view
+        self.cwd = cwd
+        self.add_dirs = add_dirs or []
         self.loading_animation = LoadingAnimation(self.chat_view)
+
         self.model_phantom = ModelPanel(self.chat_view, self.window)
         self.permission_panel = PermissionPanel(
             self.chat_view, self.window, self._handle_permission_decision
@@ -986,7 +1002,11 @@ class ChatSession:
 
         # Initialize background agent thread
         self.agent_thread = AgentThread(
-            cwd, self._handle_agent_message, cli_path=cli_path, anthropic_config=anthropic_config
+            cwd,
+            self._handle_agent_message,
+            cli_path=cli_path,
+            anthropic_config=anthropic_config,
+            add_dirs=self.add_dirs
         )
         self.agent_thread.start()
 
@@ -1324,16 +1344,23 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
 
         chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent session...\n"})
+
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        share_folders = settings.get("share_workspace_folders", False)
+
         cwd = get_best_dir(chat_view)
+        add_dirs = get_all_folders(chat_view) if share_folders else []
+
         if cwd:
             chat_view.run_command("append", {"characters": f"cwd: {cwd}\n"})
+
         chat_view.run_command("append", {"characters": welcome_text})
 
         # Set input start position
         chat_view.settings().set(CHAT_INPUT_START, chat_view.size())
 
         # Create and start the ChatSession
-        session = ChatSession(self.window, chat_view, cwd)
+        session = ChatSession(self.window, chat_view, cwd, add_dirs=add_dirs)
         window_id = self.window.id()
         chatview_clients[window_id] = session
 

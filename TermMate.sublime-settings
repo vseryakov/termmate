@@ -8,6 +8,11 @@
 
     // List of tools to completely disable for the agents.
     "disable_ask_user": true,
+
+    // Whether to share all open workspace folders with the agent.
+    // If true, the agent can access files in all folders currently open in the workspace.
+    "share_workspace_folders": true,
+
     // Path or command name for the coding CLI executable.
     "claude_command": "",
     "codex_command": "",

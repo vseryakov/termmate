@@ -178,10 +178,17 @@ class CodexAgent(BaseAgent):
         if self.options.model:
             thread_params["model"] = self.options.model
 
+        # Initialize config if we have add_dirs or other config-based overrides
+        config_overrides = {}
+
+        if self.options.add_dirs:
+            config_overrides["sandbox_workspace_write.writable_roots"] = self.options.add_dirs
+
         if self.options.disallowed_tools and "AskUserQuestion" in self.options.disallowed_tools:
-            thread_params["config"] = {
-                "features.default_mode_request_user_input": False
-            }
+            config_overrides["features.default_mode_request_user_input"] = False
+
+        if config_overrides:
+            thread_params["config"] = config_overrides
 
         # Map approve_mode to Codex approvalPolicy:
         #   "untrusted"  — always ask for approval (commands + file changes)

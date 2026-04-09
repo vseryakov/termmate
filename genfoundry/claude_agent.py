@@ -126,6 +126,10 @@ class ClaudeCodeAgent(BaseAgent):
         if self.options.model:
             cmd.extend(["--model", self.options.model])
 
+        if self.options.add_dirs:
+            cmd.append("--add-dir")
+            cmd.extend(self.options.add_dirs)
+
         # Add allowed tools if specified
         if self.options.allowed_tools:
             tools_str = ",".join(self.options.allowed_tools)

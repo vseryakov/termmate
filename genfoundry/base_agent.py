@@ -89,7 +89,8 @@ class AgentOptions:
         sandbox_mode: Optional[str] = None,
         approve_mode: Optional[str] = None,
         session_id: Optional[str] = None,
-        extra_env: Optional[Dict[str, str]] = None
+        extra_env: Optional[Dict[str, str]] = None,
+        add_dirs: Optional[List[str]] = None
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -106,6 +107,7 @@ class AgentOptions:
         self.approve_mode = approve_mode
         self.session_id = session_id
         self.extra_env = extra_env or {}
+        self.add_dirs = add_dirs or []
 
 
 class BaseAgent(abc.ABC):
