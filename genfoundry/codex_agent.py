@@ -222,6 +222,11 @@ class CodexAgent(BaseAgent):
         if result and isinstance(result, dict):
             thread = result.get("thread", {})
             self.thread_id = thread.get("id")
+            
+            # Capture the default model assigned by the server
+            if "model" in result and not self.options.model:
+                self.options.model = result.get("model")
+                
             LOG.info(f"Codex thread started: {self.thread_id}")
 
         if prompt:
