@@ -175,6 +175,8 @@ class CodexAgent(BaseAgent):
 
         # Create a thread
         thread_params = {"cwd": self.options.cwd}
+        if self.options.session_id:
+            thread_params["threadId"] = self.options.session_id
         if self.options.model:
             thread_params["model"] = self.options.model
 
@@ -218,7 +220,8 @@ class CodexAgent(BaseAgent):
                 "networkAccess": False,
             })
 
-        result = await self._rpc_request("thread/start", thread_params)
+        method = "thread/resume" if self.options.session_id else "thread/start"
+        result = await self._rpc_request(method, thread_params)
         if result and isinstance(result, dict):
             thread = result.get("thread", {})
             self.thread_id = thread.get("id")
@@ -227,7 +230,7 @@ class CodexAgent(BaseAgent):
             if "model" in result and not self.options.model:
                 self.options.model = result.get("model")
                 
-            LOG.info(f"Codex thread started: {self.thread_id}")
+            LOG.info(f"Codex connect {method}: {self.thread_id}")
 
         if prompt:
             await self.send_message(prompt)
@@ -381,7 +384,7 @@ class CodexAgent(BaseAgent):
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                LOG.debug(f"codex stderr: {line.decode('utf-8', errors='replace').strip()}")
+                # LOG.debug(f"codex stderr: {line.decode('utf-8', errors='replace').strip()}")
         except (asyncio.CancelledError, Exception):
             pass
 
@@ -405,7 +408,13 @@ class CodexAgent(BaseAgent):
         method = data.get("method", "")
         params = data.get("params", {})
 
-        if method == "turn/started":
+        if method == "thread/started":
+            thread_data = params.get("thread", {})
+            t_id = thread_data.get("id")
+            if t_id:
+                await self._message_queue.put(Message("thread_started", content={"session_id": t_id}))
+
+        elif method == "turn/started":
             turn_id = self._extract_turn_id(params)
             self._active_turn_id = turn_id
             await self._message_queue.put(

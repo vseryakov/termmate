@@ -51,6 +51,7 @@ CHAT_WORKSPACE = "chatview_active_workspace"
 CHAT_MODEL = "chatview_model"
 CHAT_PLAN_MODE = "chatview_plan_mode"
 CHAT_AGENT = "chatview_agent_provider"
+CHAT_SESSION_ID = "chatview_session_id"
 CHAT_VIEW_NAME = "Chat View"
 PACKAGE_NAME = "TermMate"
 PROMPT_PREFIX = "\n❯ "
@@ -123,13 +124,14 @@ def _reconnect_chat_view(view):
 
     cwd = get_best_dir(view)
     add_dirs = get_all_folders(view) if share_folders else []
+    session_id = ChatSession.get_view_session_id(view)
 
-    session = ChatSession(window, view, cwd, add_dirs=add_dirs)
+    session = ChatSession(window, view, cwd, add_dirs=add_dirs, session_id=session_id)
     chatview_clients[window_id] = session
     # Restore the model phantom at the existing CHAT_INPUT_START position
     session.model_phantom.update(plan_mode=session.plan_mode)
     view.run_command("term_chat_output_append", {"text": "\n\n[Reconnected after restart]\n"})
-    LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}, add_dirs={add_dirs}")
+    LOG.info(f"Reconnected ChatView agent for window {window_id}, cwd={cwd}, add_dirs={add_dirs}, session_id={session_id}")
 
 
 def get_all_folders(view):
@@ -314,8 +316,11 @@ class AgentThread(threading.Thread):
     @property
     def session_id(self):
         """Get the session id of the current running agent."""
-        if self.agent and hasattr(self.agent, "_session_id"):
-            return self.agent._session_id
+        if self.agent:
+            if hasattr(self.agent, "_session_id"):
+                return self.agent._session_id
+            if hasattr(self.agent, "thread_id"):
+                return self.agent.thread_id
         return self.anthropic_config.get("session_id")
 
     async def _receive_messages(self):
@@ -935,7 +940,7 @@ class ChatSession:
     """
     Manages the state and UI for a single ChatView session.
     """
-    def __init__(self, window, view, cwd, add_dirs=None):
+    def __init__(self, window, view, cwd, add_dirs=None, session_id=None):
         self.window = window
         self.chat_view = view
         self.cwd = cwd
@@ -953,6 +958,8 @@ class ChatSession:
         self.available_models = []  # Will be populated from control_response
         self.prompt_regions = [] # List of Regions for submitted prompts
         self.session_allow_all = False
+        # Only persist session_id after the first user message
+        self.has_sent_message = bool(session_id)
 
         self.implement_plan_phantoms = sublime.PhantomSet(self.chat_view, "implement_plan")
         self.implement_plan_buttons = [] # List of (region, phantom) tuples
@@ -997,6 +1004,7 @@ class ChatSession:
             "disallowed_tools": disallowed_tools,
             "agent_provider": agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
+            "session_id": session_id,
             "env": settings.get("env", {})
         }
 
@@ -1009,6 +1017,16 @@ class ChatSession:
             add_dirs=self.add_dirs
         )
         self.agent_thread.start()
+
+    @staticmethod
+    def get_view_session_id(view):
+        return view.settings().get(CHAT_SESSION_ID)
+
+    def set_view_session_id(self, view, session_id):
+        """Persist session_id only if the user has sent message."""
+        if not self.has_sent_message:
+            return
+        view.settings().set(CHAT_SESSION_ID, session_id)
 
     def _get_disallowed_tools(self, settings):
         """Returns a list of disallowed tools based on settings."""
@@ -1155,13 +1173,18 @@ class ChatSession:
     def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
         if not self.agent_thread:
-            self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
+            self.chat_view.run_command("term_chat_output_append",
+                {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
             self.stop_loading()
             return
 
         if region:
             self.add_prompt_highlight(region)
         self.message_processor._plan_text = ""
+        self.has_sent_message = True
+        s_id = self.agent_thread.session_id
+        if s_id:
+            self.chat_view.settings().set(CHAT_SESSION_ID, s_id)
         self.agent_thread.send(user_input)
 
     def steer(self, text, proceed_plan=False):
@@ -1194,6 +1217,8 @@ class ChatSession:
         self.stop_loading()
         self.clear_prompt_highlights()
         self.session_allow_all = False
+        self.has_sent_message = False
+        self.chat_view.settings().set(CHAT_SESSION_ID, None)
 
         # Show reset message in the history
         reset_msg = f"\n\n{PACKAGE_NAME} session reset...\n"
@@ -1210,8 +1235,10 @@ class ChatSession:
         """Stop the current agent thread and start a new one with the given provider."""
         self.stop_loading()
         self.session_allow_all = False
-        # Clear stale models from previous agent
+        self.has_sent_message = False
+        # Clear stale models and session_id from previous agent
         self.available_models = []
+        self.chat_view.settings().set(CHAT_SESSION_ID, None)
 
         if self.agent_thread:
             self.agent_thread.stop()
@@ -1253,12 +1280,12 @@ class ChatSession:
         """Restart the current agent process, optionally with a new plan mode or resuming session."""
         self.stop_loading()
 
-        # Get current session_id if it's a Claude agent
+        # Get current session_id to resume if possible
         old_session_id = None
-        current_agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
-
-        if current_agent_provider == "claude" and self.agent_thread:
+        if self.agent_thread:
             old_session_id = self.agent_thread.session_id
+
+        current_agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
 
         if self.agent_thread:
             self.agent_thread.stop()

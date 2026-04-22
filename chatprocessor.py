@@ -100,6 +100,8 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 session_id = message.content.get("session_id")
                 if session_id and message.content.get("subtype") == "init":
                     LOG.info(f"system session_id: {session_id}")
+                    # Store session_id in view settings for persistence across restarts
+                    self.session.set_view_session_id(self.session.chat_view, session_id)
 
         elif message.type == "control_request":
             # Handle permission request directly
@@ -272,6 +274,14 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
                 self.session.permission_requests[request_id] = (tool_name, input_data)
 
                 self.session.show_permission_phantom(request_id, tool_name, input_data)
+
+        elif message.type == "thread_started":
+            if hasattr(message, "content") and isinstance(message.content, dict):
+                session_id = message.content.get("session_id")
+                if session_id:
+                    LOG.info(f"Codex thread session_id: {session_id}")
+                    # Store session_id in view settings for persistence across restarts
+                    self.session.set_view_session_id(self.session.chat_view, session_id)
 
         elif message.type == "models_update":
             if hasattr(message, "content") and isinstance(message.content, dict):
