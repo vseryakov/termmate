@@ -241,6 +241,19 @@ class ClaudeCodeAgent(BaseAgent):
         }
         await self._send_control_request(request)
 
+    async def interrupt(self) -> None:
+        """
+        Interrupt the current conversation or turn.
+        """
+        if not self.is_connected:
+            raise RuntimeError("Client is not connected. Call connect() first.")
+
+        LOG.info("ClaudeCodeAgent: Sending interrupt control request")
+        request = {
+            "subtype": "interrupt"
+        }
+        await self._send_control_request(request)
+
     async def _send_control_request(self, request: Dict[str, Any]) -> None:
         """Send a control request to Claude CLI"""
         import uuid

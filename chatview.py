@@ -1952,6 +1952,36 @@ class TermChatClearSessionCommand(sublime_plugin.WindowCommand):
         return self.window.id() in chatview_clients
 
 
+class TermChatInterruptCommand(sublime_plugin.WindowCommand):
+    """
+    Interrupts the current chat session.
+    """
+    def run(self):
+        window_id = self.window.id()
+        if window_id not in chatview_clients:
+            sublime.status_message("No active ChatView session found")
+            return
+
+        session = chatview_clients[window_id]
+        if session.agent_thread and session.agent_thread.agent:
+            # The agent method is async, but we can't easily await it from run().
+            # So we use asyncio.run_coroutine_threadsafe.
+            try:
+                import asyncio
+                asyncio.run_coroutine_threadsafe(
+                    session.agent_thread.agent.interrupt(),
+                    session.agent_thread.loop
+                )
+                sublime.status_message("Interrupting agent...")
+                LOG.info("Interrupting agent via term_chat_interrupt")
+            except Exception as e:
+                LOG.error(f"Failed to interrupt agent: {e}")
+
+    def is_enabled(self):
+        # Only enable if there's an active session
+        return self.window.id() in chatview_clients
+
+
 class TermChatSetModelListHandler(sublime_plugin.ListInputHandler):
     def __init__(self, current_model=None):
         self.current_model = current_model

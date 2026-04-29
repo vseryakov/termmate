@@ -304,6 +304,17 @@ class CodexAgent(BaseAgent):
         LOG.info(f"Steering agent: {text} (proceed_plan={proceed_plan})")
         await self.send_message(text, proceed_plan=proceed_plan)
 
+    async def interrupt(self) -> None:
+        """Interrupt the current conversation or turn."""
+        if self._is_connected and self.thread_id and self._active_turn_id:
+            LOG.info(f"CodexAgent: Interrupting turn {self._active_turn_id} on thread {self.thread_id}")
+            await self._rpc_request("turn/interrupt", {
+                "threadId": self.thread_id,
+                "turnId": self._active_turn_id
+            })
+        else:
+            LOG.warning(f"CodexAgent: Cannot interrupt - is_connected: {self._is_connected}, thread_id: {self.thread_id}, active_turn_id: {self._active_turn_id}")
+
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
         LOG.debug(f"response for codex request [{request_id}]: {result}")

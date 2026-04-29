@@ -137,6 +137,11 @@ class BaseAgent(abc.ABC):
         pass
 
     @abc.abstractmethod
+    async def interrupt(self) -> None:
+        """Interrupt the current agent conversation or turn"""
+        pass
+
+    @abc.abstractmethod
     async def disconnect(self) -> None:
         """Disconnect and clean up resources"""
         pass
