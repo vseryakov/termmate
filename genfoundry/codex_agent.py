@@ -25,28 +25,30 @@ def find_codex_cli() -> Optional[str]:
     """Search common default install locations for the codex CLI."""
     candidates = []
     if sys.platform == "win32":
-        appdata = os.environ.get("APPDATA", "")
-        local_appdata = os.environ.get("LOCALAPPDATA", "")
-        candidates = [
-            os.path.join(appdata, "npm", "codex.cmd"),
-            os.path.join(appdata, "npm", "codex"),
-            os.path.join(local_appdata, "Programs", "codex", "codex.exe"),
-            os.path.join(local_appdata, "Programs", "codex", "codex.cmd"),
-        ]
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.extend([
+                os.path.join(appdata, "npm", "codex.cmd"),
+                os.path.join(appdata, "npm", "codex")
+            ])
+
     else:
         home = os.path.expanduser("~")
         candidates = [
             os.path.join(home, ".local", "bin", "codex"),
             os.path.join(home, ".npm-global", "bin", "codex"),
             os.path.join(home, ".yarn", "bin", "codex"),
+            os.path.join(home, ".bun", "bin", "codex"),
             "/usr/local/bin/codex",
+            "/usr/bin/codex",
             "/opt/homebrew/bin/codex",           # macOS (Intel/Apple Silicon)
             "/home/linuxbrew/.linuxbrew/bin/codex",  # Linux Homebrew
         ]
-    for path in candidates:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            LOG.info(f"Found codex CLI at default location: {path}")
-            return path
+    for path_str in candidates:
+        if os.path.isfile(path_str) and os.access(path_str, os.X_OK):
+            LOG.info(f"Found codex CLI at default location: {path_str}")
+            return path_str
+    
     return None
 
 
@@ -68,7 +70,8 @@ class CodexAgent(BaseAgent):
     def __init__(self, options: Optional[AgentOptions] = None):
         super().__init__(options)
         self.thread_id: Optional[str] = None
-        self.cli_path = self.options.cli_path or shutil.which("codex") or find_codex_cli()
+        cli_command = self.options.cli_path or "codex"
+        self.cli_path = shutil.which(cli_command) or find_codex_cli() or cli_command
         self._is_connected = False
         self.available_models: List[Dict[str, Any]] = []
 

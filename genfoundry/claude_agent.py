@@ -26,28 +26,30 @@ def find_claude_cli() -> Optional[str]:
     """Search common default install locations for the claude CLI."""
     candidates = []
     if sys.platform == "win32":
-        appdata = os.environ.get("APPDATA", "")
-        local_appdata = os.environ.get("LOCALAPPDATA", "")
-        candidates = [
-            os.path.join(appdata, "npm", "claude.cmd"),
-            os.path.join(appdata, "npm", "claude"),
-            os.path.join(local_appdata, "Programs", "claude", "claude.exe"),
-            os.path.join(local_appdata, "Programs", "claude", "claude.cmd"),
-        ]
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.extend([
+                os.path.join(appdata, "npm", "claude.cmd"),
+                os.path.join(appdata, "npm", "claude")
+            ])
+
     else:
         home = os.path.expanduser("~")
         candidates = [
             os.path.join(home, ".local", "bin", "claude"),
             os.path.join(home, ".npm-global", "bin", "claude"),
             os.path.join(home, ".yarn", "bin", "claude"),
+            os.path.join(home, ".bun", "bin", "claude"),
             "/usr/local/bin/claude",
+            "/usr/bin/claude",
             "/opt/homebrew/bin/claude",           # macOS (Intel/Apple Silicon)
             "/home/linuxbrew/.linuxbrew/bin/claude",  # Linux Homebrew
         ]
-    for path in candidates:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            LOG.info(f"Found claude CLI at default location: {path}")
-            return path
+    for path_str in candidates:
+        if os.path.isfile(path_str) and os.access(path_str, os.X_OK):
+            LOG.info(f"Found claude CLI at default location: {path_str}")
+            return path_str
+    
     return None
 
 
@@ -76,7 +78,8 @@ class ClaudeCodeAgent(BaseAgent):
         self._permission_callback = self.options.can_use_tool
 
         # Find claude executable
-        self.cli_path = self.options.cli_path or shutil.which("claude") or find_claude_cli()
+        cli_command = self.options.cli_path or "claude"
+        self.cli_path = shutil.which(cli_command) or find_claude_cli() or cli_command
         if not self.cli_path:
             raise FileNotFoundError(
                 "Claude CLI not found. Please install it first:\n"
