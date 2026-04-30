@@ -1,6 +1,6 @@
 [
     {
-        "caption": "Set TermMate WorkSpace",
+        "caption": "TermMate: Set Working Directory",
         "command": "term_chat_set_workspace",
         "args": {"files": [], "dirs": []}
     }
