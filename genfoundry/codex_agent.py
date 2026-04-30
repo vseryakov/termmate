@@ -402,6 +402,31 @@ class CodexAgent(BaseAgent):
         except (asyncio.CancelledError, Exception):
             pass
 
+    def _parse_codex_error(self, error: Any) -> str:
+        """Extract a user-friendly error message from Codex error data."""
+        if not error:
+            return "Unknown error"
+        
+        message = ""
+        if isinstance(error, dict):
+            message = error.get("message", "")
+        elif isinstance(error, str):
+            message = error
+        else:
+            message = str(error)
+            
+        try:
+            parsed = json.loads(message)
+            if isinstance(parsed, dict):
+                if "error" in parsed and isinstance(parsed["error"], dict):
+                    return parsed["error"].get("message", message)
+                if "message" in parsed:
+                    return parsed.get("message", message)
+        except (json.JSONDecodeError, TypeError):
+            pass
+            
+        return message
+
     # ── Message dispatch ────────────────────────────────────────────────
 
     async def _dispatch(self, data: Dict[str, Any]) -> None:
@@ -484,8 +509,8 @@ class CodexAgent(BaseAgent):
             LOG.warning(f"Codex stream error: {err_text}")
 
         elif method == "codex/event/error" or method == "error":
-            msg = params.get("msg", {})
-            err_text = msg.get("message", "") if isinstance(msg, dict) else str(params)
+            error = params.get("error") or params.get("msg") or params
+            err_text = self._parse_codex_error(error)
             await self._message_queue.put(
                 Message(MessageType.ERROR.value, content=err_text)
             )
