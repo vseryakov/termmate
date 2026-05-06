@@ -1,6 +1,6 @@
 [
     {
-        "keys": ["ctrl+enter"],
+        "keys": ["super+enter"],
         "command": "term_chat_send_input",
         "context":
         [

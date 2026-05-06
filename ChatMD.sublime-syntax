@@ -2,6 +2,7 @@
 ---
 # http://www.sublimetext.com/docs/syntax.html
 name: ChatMD
+hidden: true
 scope: text.html.markdown.chatview
 version: 2
 
