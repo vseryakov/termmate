@@ -112,7 +112,7 @@ Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune pe
 
 Customize TermMate by editing your settings: `Preferences -> Package Settings -> TermMate -> Settings`
 
-While TermMate automatically detects most agnet cli installation paths, you may need to configure them manually if:
+While TermMate automatically detects most agent CLI installation paths, you may need to configure them manually if:
 
 - You use a custom installation location not listed in the default paths.
 - You have multiple versions installed and want to pin a specific binary.
@@ -162,19 +162,28 @@ By default, TermMate does not register a shortcut for `TermMate: Start Chat` to 
 - **Selection as Context**: Select code before starting a chat to focus the agent's attention on specific logic.
 - **Iterative Refinement**: Use **Planning Mode** for large architectural changes to see the agent's proposed steps before they are applied.
 
-## Context Interaction and Data Privacy
+## Privacy & Data Handling
 
-By default, TermMate **does not** send your entire workspace or file contents to external agents. Data is only sent to Claude Code or Codex in the following scenarios:
+**TermMate does not send your entire workspace or file contents to any external servers.**
 
-*   **Chat Messages**: Any text you type directly into the TermMate chat view.
-*   **Explicit Context (@-mentions)**: When you use the `@filename` syntax to provide specific context.
-*   **Tool-driven Context**: If the coding agent requests to read a file, list a directory, or execute a command (and you have granted permission via Approve Mode), that information is sent back to the model as part of the interaction.
+Your data will only be sent to the respective LLM services (Claude Code or Codex) under the following specific conditions:
 
-All communication happens via the respective CLI tools (`claude` or `codex`) installed on your system, which connect directly to their respective servers using your configured authentication credentials.
+**What data is sent:**
+
+    *   Any text you manually type into the TermMate ChatView.
+    *   The contents of specific files you explicitly tag using the `@filename` syntax.
+    *   The outputs of shell commands, directory listings, or file contents that the agent explicitly requests to read.
+
+**How TermMate interacts with Agents:**
+
+    *   **Local Execution**: The core plugin logic runs entirely on your local machine. All communication happens locally via the official CLI tools (`claude` or `codex`) installed on your system.
+    *   **No Data Collection**: TermMate does not collect, store, or transmit any of your source code or usage telemetry to our servers. TermMate does not send data to any third-party middleman servers; data goes directly to Anthropic or OpenAI using your own configured authentication credentials.
+    *   Data is only sent when you actively hit command+enter(or ctrl+enter) in the ChatView, or when the agent executes a tool (if you have granted permission via your `Approve Mode` settings).
+
 
 ## License
 
-TermMate is provided under the **Apache License, Version 2.0** with the **Commons Clause** condition. 
+TermMate is provided under the **Apache License, Version 2.0** with the **Commons Clause** condition.
 
 This means it's free to use, modify, and redistribute the code for personal or internal use. However, **commercial resale or providing a paid service is strictly prohibited**.
 
