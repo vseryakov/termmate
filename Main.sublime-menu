@@ -21,9 +21,6 @@
                                 "caption": "Settings"
                             },
                             {
-                                "caption": "-"
-                            },
-                            {
                                 "caption": "Key Bindings",
                                 "command": "edit_settings",
                                 "args": {
