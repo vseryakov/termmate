@@ -5,7 +5,7 @@ import xml.etree.ElementTree
 
 import sublime
 
-from . import plugin
+from . import utils
 
 LOG = logging.getLogger(__package__)
 
@@ -15,7 +15,7 @@ class BaseChatMessageProcessor:
     """
     def __init__(self, session):
         self.session = session
-        self.markdown_formatter = plugin.MarkdownFormatter()
+        self.markdown_formatter = utils.MarkdownFormatter()
         self.last_is_tool_call = False
         self._plan_text = ""
 

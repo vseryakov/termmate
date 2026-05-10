@@ -7,12 +7,12 @@ import threading
 import sublime
 import sublime_plugin
 
-from . import plugin
-from .genfoundry import (
+from . import utils as plugin
+from ..genfoundry import (
     ClaudeCodeAgent, CodexAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny)
-from .genfoundry.claude_agent import find_claude_cli
-from .genfoundry.codex_agent import find_codex_cli
+from ..genfoundry.claude_agent import find_claude_cli
+from ..genfoundry.codex_agent import find_codex_cli
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor
 
 def get_available_agents(settings):
