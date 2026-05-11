@@ -41,7 +41,11 @@ codex login
 
 ### 3. TermMate Installation
 
-Clone this repository into your Sublime Text `Packages` directory as `TermMate`.
+Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMate):
+
+1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
+2. Type `Package Control: Install Package` and press `Enter`.
+3. Search for `TermMate` and press `Enter`.
 
 ### 4. Start Chat
 
