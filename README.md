@@ -174,15 +174,15 @@ Your data will only be sent to the respective LLM services (Claude Code or Codex
 
 **What data is sent:**
 
-    *   Any text you manually type into the TermMate ChatView.
-    *   The contents of specific files you explicitly tag using the `@filename` syntax.
-    *   The outputs of shell commands, directory listings, or file contents that the agent explicitly requests to read.
+- Any text you manually type into the TermMate ChatView.
+- The contents of specific files you explicitly tag using the `@filename` syntax.
+- The outputs of shell commands, directory listings, or file contents that the agent explicitly requests to read.
 
 **How TermMate interacts with Agents:**
 
-    *   **Local Execution**: The core plugin logic runs entirely on your local machine. All communication happens locally via the official CLI tools (`claude` or `codex`) installed on your system.
-    *   **No Data Collection**: TermMate does not collect, store, or transmit any of your source code or usage telemetry to our servers. TermMate does not send data to any third-party middleman servers; data goes directly to Anthropic or OpenAI using your own configured authentication credentials.
-    *   Data is only sent when you actively hit command+enter(or ctrl+enter) in the ChatView, or when the agent executes a tool (if you have granted permission via your `Approve Mode` settings).
+- **Local Execution**: The core plugin logic runs entirely on your local machine. All communication happens locally via the official CLI tools (`claude` or `codex`) installed on your system.
+- **No Data Collection**: TermMate does not collect, store, or transmit any of your source code or usage telemetry to our servers. TermMate does not send data to any third-party middleman servers; data goes directly to Anthropic or OpenAI using your own configured authentication credentials.
+- Data is only sent when you actively hit command+enter(or ctrl+enter) in the ChatView, or when the agent executes a tool (if you have granted permission via your `Approve Mode` settings).
 
 
 ## License
