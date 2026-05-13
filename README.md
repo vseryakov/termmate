@@ -6,6 +6,8 @@
 
 TermMate is a professional AI coding agent for Sublime Text that supports multi agent providers, including **Claude Code** and **Codex**. It builds a seamless agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent in your editor, not in terminal.**
 
+For detailed usage, please refer to the [TermMate Documentation](https://termmate.app/docs/setup).
+
 ## Getting Started
 
 ### 1. Prerequisites
