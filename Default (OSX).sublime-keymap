@@ -6,5 +6,13 @@
         [
             { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
         ]
+    },
+    {
+        "keys": ["super+escape"],
+        "command": "term_chat_interrupt",
+        "context":
+        [
+            { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
+        ]
     }
 ]
