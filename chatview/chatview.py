@@ -1416,7 +1416,10 @@ class TermChatSendInputCommand(sublime_plugin.TextCommand):
         if not user_input:
             return
 
-        sublime.status_message("Sending message...")
+        if sublime.platform() == "osx":
+            sublime.status_message("Sending... (Cmd+Esc to stop)")
+        else:
+            sublime.status_message("Sending... (Shift+Esc to stop)")
 
         # Show input text and next prompt (simulated local echo/confirmation)
         self.view.run_command("term_chat_input_prompt", {"text": ""})
@@ -1963,6 +1966,10 @@ class TermChatInterruptCommand(sublime_plugin.WindowCommand):
             return
 
         session = chatview_clients[window_id]
+        if not session.loading_animation.is_loading:
+            sublime.status_message("No active conversation to interrupt")
+            return
+
         if session.agent_thread and session.agent_thread.agent:
             # The agent method is async, but we can't easily await it from run().
             # So we use asyncio.run_coroutine_threadsafe.
