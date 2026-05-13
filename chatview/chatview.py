@@ -1982,7 +1982,7 @@ class TermChatInterruptCommand(sublime_plugin.WindowCommand):
                 sublime.set_timeout(
                     lambda: session.chat_view.run_command(
                         "term_chat_output_append",
-                        {"text": "\n\n■ Conversation interrupted\n\n"}
+                        {"text": "\n■ Conversation interrupted\n"}
                     ),
                     1000
                 )
