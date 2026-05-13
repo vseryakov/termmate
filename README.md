@@ -68,11 +68,12 @@ To reset the current conversation history and start a completely fresh context, 
 
 **Set Working Space**
 
-Right-click on any folder in the sidebar and select **Set TermMate Working Space** to set the working directory for the agent. This affects the current working directory when agents execute commands or access files. You can also use the command palette.
+Right-click on any folder in the sidebar and select **Set Working Directory** to set the working directory for the agent. This affects the current working directory when agents execute commands or access files. You can also use the command palette.
 
 **Chat with Current File or Selection**
 
-You can right-click in any file, tab, and select **Chat with TermMate agent**. This will:
+You can right-click in any file, tab, and select **Chat with Agent**. This will:
+
 - Open the TermMate chat view (if not already open).
 - Insert a reference to the file (`@filename`) or selected line range (`@filename#L1-10`) into the message prompt.
 - Tagged files will be automatically sent as context to the active agent.
