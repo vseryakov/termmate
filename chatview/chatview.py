@@ -1972,6 +1972,13 @@ class TermChatInterruptCommand(sublime_plugin.WindowCommand):
                     session.agent_thread.agent.interrupt(),
                     session.agent_thread.loop
                 )
+                sublime.set_timeout(
+                    lambda: session.chat_view.run_command(
+                        "term_chat_output_append",
+                        {"text": "\n\n■ Conversation interrupted\n\n"}
+                    ),
+                    1000
+                )
                 sublime.status_message("Interrupting agent")
                 LOG.info(f"Interrupt conversation for window {window_id}")
             except Exception as e:
