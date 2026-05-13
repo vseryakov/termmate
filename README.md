@@ -4,7 +4,7 @@
 
 ![TermMate Screenshot](screenshot.jpg)
 
-TermMate is a powerful agentic coding design tool for Sublime Text, bringing the full capabilities of AI-driven development directly into your editor. Built to work seamlessly with **ClaudeCode** and **Codex**, TermMate allows you to orchestrate complex coding tasks, refactor entire modules, and explore your codebase with a conversation-driven workflow that understands your project context.
+TermMate is a professional AI coding agent for Sublime Text that supports multi agent providers, including **Claude Code** and **Codex**. It builds a seamless agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent in your editor, not in terminal.**
 
 ## Getting Started
 
@@ -53,7 +53,8 @@ Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMa
 - Type `TermMate: Start Chat` and press `Enter`.
 - A new view will open for the TermMate chat.
 - Type your message and press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux) to send.
-- Alternatively, you can use a shortcut to start the chat (see [Custom Keybindings](#custom-keybindings) below).
+
+**Stop Conversation:** You can stop the running conversation at any time. Simply run the `TermMate: Stop Conversation` from the command palette, or use the shortcut `Cmd+Escape` (Mac) / `Shift+Escape` (Windows/Linux) in the chat window.
 
 ## Usage & Key Features
 
@@ -106,6 +107,7 @@ Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune pe
 | :--- | :--- | :--- | :--- |
 | **Start New Chat** | - | - | `TermMate: Start Chat` |
 | **Send Message** | `Cmd+Enter` | `Ctrl+Enter` | - |
+| **Stop Conversation** | `Cmd+Escape` | `Shift+Escape` | `TermMate: Stop Conversation` |
 | **Navigate Input History** | `Up` / `Down` | `Up` / `Down` | - |
 | **Mention File** | `@` | `@` | - |
 | **Set Workspace** | - | - | `TermMate: Set Working Directory` |
