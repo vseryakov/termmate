@@ -55,8 +55,7 @@ Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMa
 - Type `TermMate: Start Chat` and press `Enter`.
 - A new view will open for the TermMate chat.
 - Type your message and press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux) to send.
-
-- **Stop Conversation**: Run `TermMate: Stop Conversation` from the command palette, or use the shortcut `Cmd+Escape` (Mac) / `Shift+Escape` (Windows/Linux) in the chat window.
+- You can stop a running conversation at any time. Use the shortcut `Cmd+Escape` (Mac) / `Shift+Escape` (Windows/Linux) in the chat window, or run `TermMate: Stop Conversation` from the command palette.
 
 ## Usage & Key Features
 
@@ -68,7 +67,7 @@ Use the command palette (`TermMate: Prompt`) to send a quick instruction to the 
 
 To reset the current conversation history and start a completely fresh context, open the command palette and run **`TermMate: Clear Session`**. This will reload the agent and clear its memory for the current workspace.
 
-**Set Working Space**
+**Set Working Directory**
 
 Right-click on any folder in the sidebar and select **Set Working Directory** to set the working directory for the agent. This affects the current working directory when agents execute commands or access files. You can also use the command palette.
 
