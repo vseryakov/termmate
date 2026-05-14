@@ -1,6 +1,6 @@
 # TermMate
 
-**Agentic Coding Mate from Design to meet Code**
+**Agentic Coding Mate from Mind to Code**
 
 ![TermMate Screenshot](screenshot.jpg)
 
@@ -56,7 +56,7 @@ Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMa
 - A new view will open for the TermMate chat.
 - Type your message and press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux) to send.
 
-**Stop Conversation:** You can stop the running conversation at any time. Simply run the `TermMate: Stop Conversation` from the command palette, or use the shortcut `Cmd+Escape` (Mac) / `Shift+Escape` (Windows/Linux) in the chat window.
+- **Stop Conversation**: Run `TermMate: Stop Conversation` from the command palette, or use the shortcut `Cmd+Escape` (Mac) / `Shift+Escape` (Windows/Linux) in the chat window.
 
 ## Usage & Key Features
 
@@ -121,6 +121,8 @@ Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune pe
 
 Customize TermMate by editing your settings: `Preferences -> Package Settings -> TermMate -> Settings`
 
+### Agent CLI Paths
+
 While TermMate automatically detects most agent CLI installation paths, you may need to configure them manually if:
 
 - You use a custom installation location not listed in the default paths.
@@ -133,6 +135,8 @@ While TermMate automatically detects most agent CLI installation paths, you may 
     "codex_command": "/path/to/your/custom/codex"
 }
 ```
+
+### Custom Environment Variables
 
 The `env` configuration allows you to inject custom environment variables directly into the process when starting an agent CLI command. This is useful for providing API keys, custom base URLs, or passing specific environment values without altering your global system configuration.
 
@@ -148,7 +152,7 @@ For example, to configure **OpenRouter** for Claude, you can provide your OpenRo
 }
 ```
 
-**Custom Keybindings**
+### Custom Keybindings
 
 By default, TermMate does not register a shortcut for `TermMate: Start Chat` to avoid conflicts. You can manually add a shortcut (like `Cmd+Alt+G` or `Ctrl+Alt+G`) by navigating to `Preferences -> Key Bindings` and adding the following configuration:
 
@@ -166,7 +170,22 @@ By default, TermMate does not register a shortcut for `TermMate: Start Chat` to 
 ]
 ```
 
-## 💡 Tips
+If you prefer using just the `Escape` key to interrupt the conversation when the chat view is focused, you can add this:
+
+```json
+[
+    {
+        "keys": ["escape"],
+        "command": "term_chat_interrupt",
+        "context":
+        [
+            { "key": "setting.chatview_chat", "operator": "equal", "operand": true }
+        ]
+    }
+]
+```
+
+## 💡 TermMate Agent Tips
 
 - **Selection as Context**: Select code before starting a chat to focus the agent's attention on specific logic.
 - **Iterative Refinement**: Use **Planning Mode** for large architectural changes to see the agent's proposed steps before they are applied.
