@@ -97,7 +97,6 @@ class ClaudeCodeAgent(BaseAgent):
             raise RuntimeError("Client is already connected")
 
         # Build command arguments for streaming JSON mode
-        # --print: Non-interactive mode
         # --output-format=stream-json: Stream JSON responses
         # --input-format=stream-json: Accept JSON input stream
         # --replay-user-messages: Echo user messages for acknowledgment
@@ -105,7 +104,6 @@ class ClaudeCodeAgent(BaseAgent):
         # --permission-prompt-tool: Enable permission prompts for tool usage
         cmd = [
             self.cli_path,
-            "--print",
             "--output-format=stream-json",
             "--input-format=stream-json",
             "--replay-user-messages",
@@ -130,8 +128,8 @@ class ClaudeCodeAgent(BaseAgent):
             cmd.extend(["--model", self.options.model])
 
         if self.options.add_dirs:
-            cmd.append("--add-dir")
-            cmd.extend(self.options.add_dirs)
+            for directory in self.options.add_dirs:
+                cmd.extend(["--add-dir", str(directory)])
 
         # Add allowed tools if specified
         if self.options.allowed_tools:
