@@ -9,11 +9,12 @@ import sublime_plugin
 
 from . import utils as plugin
 from ..genfoundry import (
-    ClaudeCodeAgent, CodexAgent, AgentOptions, AssistantMessage, TextBlock,
+    ClaudeCodeAgent, CodexAgent, PiAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny)
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
-from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor
+from ..genfoundry.pi_agent import find_pi_cli
+from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
 
 def get_available_agents(settings):
     """Returns a list of available agents."""
@@ -33,6 +34,13 @@ def get_available_agents(settings):
     elif shutil.which("codex") or find_codex_cli():
         available.append("codex")
 
+    # Check pi
+    pi_cmd = settings.get("pi_command")
+    if pi_cmd and shutil.which(pi_cmd):
+        available.append("pi")
+    elif shutil.which("pi") or find_pi_cli():
+        available.append("pi")
+
     return available
 
 # Constants for gutter highlights
@@ -43,7 +51,7 @@ PROMPT_HIGHLIGHT_FLAGS = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublim
 
 
 # logger by package name
-LOG = logging.getLogger(__package__)
+LOG = logging.getLogger("TermMate")
 
 CHAT_VIEW_FLAG = "chatview_chat"
 CHAT_INPUT_START = "chatview_input_start"
@@ -266,7 +274,12 @@ class AgentThread(threading.Thread):
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
-        AgentClass = CodexAgent if agent_provider == "codex" else ClaudeCodeAgent
+        if agent_provider == "codex":
+            AgentClass = CodexAgent
+        elif agent_provider == "pi":
+            AgentClass = PiAgent
+        else:
+            AgentClass = ClaudeCodeAgent
 
         try:
             async with AgentClass(options) as agent:
@@ -353,11 +366,21 @@ class AgentThread(threading.Thread):
                 lambda: self.on_message(("error", f"Failed to reset session: {str(e)}")), 0
             )
 
-    async def _send_permission_response(self, request_id, response_data):
+    async def _send_permission_response(self, request_id, response_data, is_extension_ui=False):
         """Internal async method to send a permission response."""
         if isinstance(self.agent, CodexAgent):
             # Codex agent: route through its approval response handler
             await self.agent.send_approval_response(request_id, response_data)
+        elif is_extension_ui:
+            response = {
+                "type": "extension_ui_response",
+                "id": request_id,
+                **response_data
+            }
+            try:
+                await self.agent._write_json(response)
+            except Exception as e:
+                LOG.error(f"Failed to send extension ui response: {e}")
         else:
             # Claude agent: send control_response JSON
             response = {
@@ -373,11 +396,11 @@ class AgentThread(threading.Thread):
             except Exception as e:
                 LOG.error(f"Failed to send permission response: {e}")
 
-    def send_permission_response(self, request_id, response_data):
+    def send_permission_response(self, request_id, response_data, is_extension_ui=False):
         """Schedule a permission response to be sent."""
         if self.loop and self.agent:
             asyncio.run_coroutine_threadsafe(
-                self._send_permission_response(request_id, response_data),
+                self._send_permission_response(request_id, response_data, is_extension_ui),
                 self.loop
             )
 
@@ -430,6 +453,12 @@ class AgentThread(threading.Thread):
                     self.loop
                 )
                 LOG.info(f"Updated Claude model to: {model}")
+            elif isinstance(self.agent, PiAgent):
+                asyncio.run_coroutine_threadsafe(
+                    self.agent.set_model(model),
+                    self.loop
+                )
+                LOG.info(f"Updated Pi model to: {model}")
 
 
 class ModelPanel:
@@ -984,6 +1013,8 @@ class ChatSession:
 
         if agent_provider == "codex":
             self.message_processor = CodexMessageProcessor(self)
+        elif agent_provider == "pi":
+            self.message_processor = PiMessageProcessor(self)
         else:
             self.message_processor = ClaudeMessageProcessor(self)
 
@@ -1097,6 +1128,17 @@ class ChatSession:
                 del self.permission_requests[request_id]
                 return
 
+            if tool_name.startswith("extension_ui_"):
+                is_confirm = tool_name == "extension_ui_confirm"
+                if action in ("allow", "allow_chat"):
+                    response_data = {"confirmed": True} if is_confirm else {"value": "Allow"}
+                else:
+                    response_data = {"cancelled": True}
+                self.send_permission_response(request_id, response_data, is_extension_ui=True)
+                self.clear_permission_phantom(request_id)
+                del self.permission_requests[request_id]
+                return
+
             if action == "allow":
                 response_data = {
                     "behavior": "allow",
@@ -1120,10 +1162,10 @@ class ChatSession:
             self.clear_permission_phantom(request_id)
             del self.permission_requests[request_id]
 
-    def send_permission_response(self, request_id, response_data):
+    def send_permission_response(self, request_id, response_data, is_extension_ui=False):
         """Send a control response back to the agent via agent_thread."""
         if self.agent_thread:
-            self.agent_thread.send_permission_response(request_id, response_data)
+            self.agent_thread.send_permission_response(request_id, response_data, is_extension_ui)
 
     def _handle_agent_message(self, message):
         """Handle messages received from the agent thread."""
@@ -2062,6 +2104,8 @@ class TermChatAgentProviderInputHandler(sublime_plugin.ListInputHandler):
             items.append(("claude: (Claude Code CLI by Anthropic)", "claude"))
         if "codex" in self.available_agents:
             items.append(("codex: (Codex CLI by OpenAI)", "codex"))
+        if "pi" in self.available_agents:
+            items.append(("pi: (Pi Coding Agent by Earendil)", "pi"))
 
         if not items:
             items.append(("No agent CLI found", ""))

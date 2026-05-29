@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, AsyncIterator, List, Callable, Union
 from enum import Enum
 
 # logger by package name
-LOG = logging.getLogger(__package__)
+LOG = logging.getLogger("TermMate")
 
 from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent

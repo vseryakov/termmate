@@ -4,8 +4,7 @@ import re
 import unicodedata
 import sublime
 
-# logger by package name
-LOG = logging.getLogger(__package__)
+LOG = logging.getLogger("TermMate")
 
 def get_log_level(level_name):
     """Maps log level names to logging constants."""

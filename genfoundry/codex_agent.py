@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Optional, Dict, Any, AsyncIterator, List, Callable, Union
 
-LOG = logging.getLogger(__package__)
+LOG = logging.getLogger("TermMate")
 
 from .base_agent import MessageType, Message, TextBlock, AssistantMessage, \
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext, AgentOptions, BaseAgent

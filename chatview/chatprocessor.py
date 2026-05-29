@@ -7,7 +7,7 @@ import sublime
 
 from . import utils
 
-LOG = logging.getLogger(__package__)
+LOG = logging.getLogger("TermMate")
 
 class BaseChatMessageProcessor:
     """
@@ -359,5 +359,205 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
                 return header + "\n" + "\n\n".join(diffs)
 
             return header
+
+        return f"⏺ {name}" if name else ""
+
+class PiMessageProcessor(BaseChatMessageProcessor):
+    def _handle_typed_message(self, message):
+        if message.type == "text_delta":
+            self.session.start_loading()
+            if self.last_is_tool_call:
+                self.append_content("\n")
+                self.last_is_tool_call = False
+            self.append_content(message.content)
+            return
+            
+        if message.type == "text_end":
+            # The text was already appended via text_delta, so we just ignore this message
+            # to prevent duplicating the entire chunk.
+            return
+            
+        if message.type in ("thinking_start", "thinking_delta"):
+            self.session.start_loading()
+            return
+
+        if message.type == "assistant":
+            self.session.start_loading()
+
+            # Extract tool blocks
+            if hasattr(message, "content"):
+                for block in message.content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        if not self.last_is_tool_call:
+                            self.append_content("\n")
+                        self.last_is_tool_call = True
+                        content = self._format_tool_block(block)
+                        if content:
+                            self.append_content(content + "\n")
+
+        elif message.type == "system":
+            if hasattr(message, "content") and isinstance(message.content, dict):
+                session_id = message.content.get("session_id")
+                if session_id and message.content.get("subtype") == "init":
+                    LOG.info(f"system session_id: {session_id}")
+                    # Store session_id in view settings for persistence across restarts
+                    self.session.set_view_session_id(self.session.chat_view, session_id)
+
+        elif message.type == "control_request":
+            # Handle permission request directly
+            request = message.content.get("request", {})
+            subtype = request.get("subtype")
+            if subtype == "can_use_tool":
+                tool_name = request.get("tool_name")
+                input_data = request.get("input", {})
+                request_id = message.content.get("request_id")
+
+                # Store input data for later use in response
+                self.session.permission_requests[request_id] = (tool_name, input_data)
+                self.session.show_permission_phantom(request_id, tool_name, input_data)
+
+        elif message.type == "extension_ui_request":
+            request = message.content
+            method = request.get("method")
+            request_id = request.get("id")
+            title = request.get("title", method)
+            
+            tool_name = f"extension_ui_{method}"
+            self.session.permission_requests[request_id] = (tool_name, request)
+            
+            # Show in permission phantom
+            self.session.show_permission_phantom(request_id, f"Extension UI: {title}", request)
+
+        elif message.type == "error":
+            self.append_error(message.content)
+            self.session.stop_loading()
+
+        elif message.type == "result":
+            # Flush markdown formatter buffer
+            self.append_content("", flush=True)
+            # Stop loading on turn completion (heuristic)
+            self.session.stop_loading()
+            self.append_content("\n")
+
+        elif message.type == "control_response":
+            if hasattr(message, "content") and isinstance(message.content, dict):
+                response_outer = message.content.get("response", {})
+                if response_outer.get("subtype") == "success":
+                    response_data = response_outer.get("response", {})
+                    models = response_data.get("models", [])
+                    if models:
+                        self.session.available_models = models
+
+        elif message.type == "models_update":
+            if hasattr(message, "content") and isinstance(message.content, dict):
+                models = message.content.get("models", [])
+                if models:
+                    self.session.available_models = models
+
+    def _format_tool_block(self, block):
+        name = block.get("name")
+        input_data = block.get("arguments", {})
+
+        if name == "read":
+            file_path = input_data.get("file_path") or input_data.get("path") or ""
+            if file_path:
+                try:
+                    if os.path.isabs(file_path):
+                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                    else:
+                        rel_path = file_path
+                except Exception:
+                    rel_path = file_path
+
+                offset = input_data.get("offset")
+                limit = input_data.get("limit")
+
+                if offset is not None and limit is not None:
+                    start_line = offset
+                    end_line = offset + limit - 1
+                    return f"⏺ read {rel_path}#L{start_line}-L{end_line}"
+                elif offset is not None:
+                    return f"⏺ read {rel_path}#L{offset}"
+                else:
+                    return f"⏺ read {rel_path}"
+
+        elif name in ("agent", "task"):
+            description = input_data.get("description", "")
+            subagent_type = input_data.get("subagent_type", "")
+
+            parts = [f"⏺ {name}"]
+            if subagent_type:
+                parts.append(subagent_type)
+            if description:
+                parts.append(description)
+
+            return " ".join(parts)
+
+        elif name == "bash":
+            command = input_data.get("command", "")
+            if command:
+                return f"⏺ bash {command}"
+
+        elif name in ("write", "edit"):
+            file_path = input_data.get("file_path") or input_data.get("path") or ""
+            if file_path:
+                try:
+                    if os.path.isabs(file_path):
+                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
+                    else:
+                        rel_path = file_path
+                except Exception:
+                    rel_path = file_path
+                header = f"⏺ {name} {rel_path}"
+
+                old_text = input_data.get("old_string") or input_data.get("oldText")
+                new_text = input_data.get("new_string") or input_data.get("newText")
+                if name == "edit" and old_text is not None and new_text is not None:
+                    if old_text and not old_text.endswith("\n"): old_text += "\n"
+                    if new_text and not new_text.endswith("\n"): new_text += "\n"
+                    old_lines = old_text.splitlines(keepends=True)
+                    new_lines = new_text.splitlines(keepends=True)
+
+                    diff_lines = list(difflib.unified_diff(
+                        old_lines, new_lines,
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}"
+                    ))
+
+                    if len(diff_lines) > 2:
+                        diff_text = "".join(diff_lines[2:])
+                        return header + "\n" + self._render_diff_block(diff_text)
+                        
+                elif name == "edit" and "edits" in input_data:
+                    # pi agent edits array
+                    edits = input_data.get("edits", [])
+                    if edits and isinstance(edits, list):
+                        diff_outputs = []
+                        for edit in edits:
+                            old_t = edit.get("oldText")
+                            new_t = edit.get("newText")
+                            if old_t is not None and new_t is not None:
+                                if old_t and not old_t.endswith("\n"): old_t += "\n"
+                                if new_t and not new_t.endswith("\n"): new_t += "\n"
+                                o_lines = old_t.splitlines(keepends=True)
+                                n_lines = new_t.splitlines(keepends=True)
+                                d_lines = list(difflib.unified_diff(o_lines, n_lines, fromfile=f"a/{rel_path}", tofile=f"b/{rel_path}"))
+                                if len(d_lines) > 2:
+                                    diff_outputs.append("".join(d_lines[2:]))
+                        if diff_outputs:
+                            return header + "\n" + self._render_diff_block("\n".join(diff_outputs))
+
+                return header
+        elif name in ("grep", "find", "ls"):
+            pattern = input_data.get("pattern") or input_data.get("query") or input_data.get("path") or input_data.get("regex") or ""
+            return f"⏺ {name} {pattern}".strip()
+        elif name == "web_fetch":
+            url = input_data.get("url", "")
+            if url:
+                return f"⏺ web_fetch {url}"
+        elif name == "web_search":
+            query = input_data.get("query", "")
+            if query:
+                return f"⏺ web_search ({query})"
 
         return f"⏺ {name}" if name else ""
