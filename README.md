@@ -4,7 +4,7 @@
 
 ![TermMate Screenshot](screenshot.jpg)
 
-TermMate is a professional AI coding agent for Sublime Text that supports multi agent providers, including **Claude Code** and **Codex**. It builds a seamless agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent in your editor, not in terminal.**
+TermMate is a professional AI coding agent for Sublime Text that supports multi agent providers, including **Claude Code**, **Codex**, and **[Pi Agent](https://pi.dev)**. It builds a seamless agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent in your editor, not in terminal.**
 
 For detailed usage, please refer to the [TermMate Documentation](https://termmate.app/docs/setup).
 
@@ -24,6 +24,11 @@ curl -fsSL https://claude.ai/install.sh | bash
 npm install -g @openai/codex
 ```
 
+**Pi Agent:**
+```bash
+curl -fsSL https://pi.dev/install.sh | sh
+```
+
 > **Note:** TermMate automatically detects CLI installation paths across multiple environments, including **Homebrew**, **npm-global**, **Yarn**, and common local binary directories. You typically don't need to manually configure environment variables or search paths.
 
 
@@ -39,6 +44,11 @@ claude /login
 **Codex:**
 ```bash
 codex login
+```
+
+**Pi Agent:**
+```bash
+/login
 ```
 
 ### 3. TermMate Installation
@@ -101,7 +111,7 @@ Agents perform various actions (tools) like reading files, searching the web, or
 
 **Switch Agents & Model Selection**
 
-Effortlessly swap between Claude, Codex, or custom agent providers. Fine-tune performance by selecting specific LLM models for different tasks.
+Effortlessly swap between Claude, Codex, Pi Agent, or custom agent providers. Fine-tune performance by selecting specific LLM models for different tasks.
 
 ## Shortcuts & Commands
 
@@ -131,7 +141,8 @@ While TermMate automatically detects most agent CLI installation paths, you may 
 ```json
 {
     "claude_command": "/path/to/your/custom/claude",
-    "codex_command": "/path/to/your/custom/codex"
+    "codex_command": "/path/to/your/custom/codex",
+    "pi_command": "/path/to/your/custom/pi"
 }
 ```
 
@@ -193,7 +204,7 @@ If you prefer using just the `Escape` key to interrupt the conversation when the
 
 **TermMate does not send your entire workspace or file contents to any external servers.**
 
-Your data will only be sent to the respective LLM services (Claude Code or Codex) under the following specific conditions:
+Your data will only be sent to the respective LLM services (Claude Code, Codex, or Pi) under the following specific conditions:
 
 **What data is sent:**
 
@@ -203,7 +214,7 @@ Your data will only be sent to the respective LLM services (Claude Code or Codex
 
 **How TermMate interacts with Agents:**
 
-- **Local Execution**: The core plugin logic runs entirely on your local machine. All communication happens locally via the official CLI tools (`claude` or `codex`) installed on your system.
+- **Local Execution**: The core plugin logic runs entirely on your local machine. All communication happens locally via the official CLI tools (`claude`, `codex`, or `pi`) installed on your system.
 - **No Data Collection**: TermMate does not collect, store, or transmit any of your source code or usage telemetry to our servers. TermMate does not send data to any third-party middleman servers; data goes directly to Anthropic or OpenAI using your own configured authentication credentials.
 - Data is only sent when you actively hit command+enter(or ctrl+enter) in the ChatView, or when the agent executes a tool (if you have granted permission via your `Approve Mode` settings).
 
