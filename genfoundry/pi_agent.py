@@ -127,8 +127,19 @@ class PiAgent(BaseAgent):
         # Note: Plan mode is specifically NOT supported for pi agent
 
         # Add system prompt if specified
-        if self.options.system_prompt:
-            cmd.extend(["--system-prompt", self.options.system_prompt])
+        system_prompt = self.options.system_prompt or ""
+        
+        if self.options.add_dirs:
+            dirs_str = "\n".join(f"- {d}" for d in self.options.add_dirs)
+            system_prompt += (
+                f"\n\nYou also have access to the following additional workspace directories:\n"
+                f"{dirs_str}\n"
+                f"You can read, write, search, or run shell commands in these directories "
+                f"using their absolute paths."
+            )
+
+        if system_prompt:
+            cmd.extend(["--system-prompt", system_prompt])
 
         # Add model if specified
         if self.options.model:
@@ -352,7 +363,7 @@ class PiAgent(BaseAgent):
             max_attempts = data.get("maxAttempts")
             delay = data.get("delayMs", 0) / 1000.0
             err_msg = extract_error(data.get("errorMessage", ""))
-            msg = f"\n\n> ⚠️ Request failed ({err_msg}). Retrying (attempt {attempt}/{max_attempts}) in {delay}s...\n\n"
+            msg = f"\n⚠️ Request failed ({err_msg}). Retrying (attempt {attempt}/{max_attempts}) in {delay}s...\n"
             return Message("text_delta", content=msg, msg_id=msg_id)
 
         if msg_type == "auto_retry_end":
