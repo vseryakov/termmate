@@ -138,6 +138,8 @@ class PiAgent(BaseAgent):
                 f"using their absolute paths."
             )
 
+        LOG.debug(f"Pi System prompt: {system_prompt}")
+
         if system_prompt:
             cmd.extend(["--system-prompt", system_prompt])
 
@@ -295,7 +297,6 @@ class PiAgent(BaseAgent):
 
                     try:
                         data = json.loads(line)
-                        LOG.debug(f"pi msg: {data}")
                         message = self._parse_message(data)
                         if message is not None:
                             await self._message_queue.put(message)
@@ -447,9 +448,12 @@ class PiAgent(BaseAgent):
         if msg_type == "agent_end":
             err = data.get("errorMessage")
             if err:
+                LOG.info(f"PiAgent ended with error: {err}")
                 # We do not emit Message("error") here to avoid double-printing errors 
                 # (since auto_retry_start and auto_retry_end handle them nicely).
                 pass
+            else:
+                LOG.info("PiAgent ended successfully.")
             return Message("result", content={"success": True}, msg_id=msg_id)
 
         content = data.get("content") or data.get("message")

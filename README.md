@@ -51,6 +51,8 @@ codex login
 /login
 ```
 
+Alternatively, you can authenticate by setting API keys via environment variables in TermMate's settings. See [Custom Environment Variables](#custom-environment-variables) for details.
+
 ### 3. TermMate Installation
 
 Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMate):

@@ -1424,7 +1424,7 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         shortcut = "Command+Enter" if sublime.platform() == "osx" else "Control+Enter"
         welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
 
-        chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent session...\n"})
+        chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent\n"})
 
         settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
         share_folders = settings.get("share_workspace_folders", False)
