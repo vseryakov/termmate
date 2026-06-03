@@ -433,8 +433,9 @@ class PiAgent(BaseAgent):
                 if isinstance(content_blocks, list):
                     for block in content_blocks:
                         if isinstance(block, dict) and block.get("type") == "toolCall":
-                            block["type"] = "tool_use"
-                            blocks.append(block)
+                            new_block = block.copy()
+                            new_block["type"] = "tool_use"
+                            blocks.append(new_block)
                         # We omit text blocks here because they are streamed via text_delta
 
                 assistant_msg = AssistantMessage(

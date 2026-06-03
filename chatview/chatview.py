@@ -371,11 +371,23 @@ class AgentThread(threading.Thread):
         if isinstance(self.agent, CodexAgent):
             # Codex agent: route through its approval response handler
             await self.agent.send_approval_response(request_id, response_data)
-        elif is_extension_ui:
+        elif isinstance(self.agent, PiAgent) or is_extension_ui:
+            # Pi agent only supports extension_ui_request/response protocol
+            # (no control_request/response). Also used for explicit extension UI responses.
+            if is_extension_ui:
+                # Already in extension_ui_response shape (confirmed/cancelled/value)
+                pi_response_data = response_data
+            else:
+                # Convert allow/deny behavior to extension_ui_response shape
+                behavior = response_data.get("behavior", "deny")
+                if behavior == "allow":
+                    pi_response_data = {"confirmed": True}
+                else:
+                    pi_response_data = {"cancelled": True}
             response = {
                 "type": "extension_ui_response",
                 "id": request_id,
-                **response_data
+                **pi_response_data
             }
             try:
                 await self.agent._write_json(response)

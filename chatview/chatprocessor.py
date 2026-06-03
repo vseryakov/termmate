@@ -403,18 +403,7 @@ class PiMessageProcessor(BaseChatMessageProcessor):
                     # Store session_id in view settings for persistence across restarts
                     self.session.set_view_session_id(self.session.chat_view, session_id)
 
-        elif message.type == "control_request":
-            # Handle permission request directly
-            request = message.content.get("request", {})
-            subtype = request.get("subtype")
-            if subtype == "can_use_tool":
-                tool_name = request.get("tool_name")
-                input_data = request.get("input", {})
-                request_id = message.content.get("request_id")
 
-                # Store input data for later use in response
-                self.session.permission_requests[request_id] = (tool_name, input_data)
-                self.session.show_permission_phantom(request_id, tool_name, input_data)
 
         elif message.type == "extension_ui_request":
             request = message.content
