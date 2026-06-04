@@ -1,0 +1,13 @@
+TermMate 0.2.0
+==============
+
+What's New
+----------
+
+Pi Agent Support
+  TermMate now supports Pi Agent (https://pi.dev) as an agent provider
+  alongside Claude Code and Codex. Install the Pi CLI and authenticate once,
+  then switch to it from the command palette at any time.
+
+  Install:  curl -fsSL https://pi.dev/install.sh | sh
+  Login:    pi /login (in your terminal)
