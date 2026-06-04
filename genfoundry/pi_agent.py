@@ -141,7 +141,7 @@ class PiAgent(BaseAgent):
         LOG.debug(f"Pi System prompt: {system_prompt}")
 
         if system_prompt:
-            cmd.extend(["--system-prompt", system_prompt])
+            cmd.extend(["--append-system-prompt", system_prompt])
 
         # Add model if specified
         if self.options.model:
