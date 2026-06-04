@@ -4,7 +4,7 @@
 
 ![TermMate Screenshot](screenshot.jpg)
 
-TermMate is a professional AI coding agent for Sublime Text that supports multi agent providers, including **Claude Code**, **Codex**, and **[Pi Agent](https://pi.dev)**. It builds a seamless agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent in your editor, not in terminal.**
+TermMate is a professional AI coding agent for Sublime Text that supports multi-agent providers, including **Claude Code**, **Codex**, and **[Pi Agent](https://pi.dev)**. It builds a seamless native agentic interface directly within your editor for autonomous task execution, codebase exploration, and smart refactoring. **TermMate Agent, native to your editor.**
 
 For detailed usage, please refer to the [TermMate Documentation](https://termmate.app/docs/setup).
 
@@ -38,7 +38,7 @@ Authenticate the agents via your terminal:
 
 **Claude Code:**
 ```bash
-claude /login
+/login
 ```
 
 **Codex:**
@@ -60,6 +60,15 @@ Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMa
 1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
 2. Type `Package Control: Install Package` and press `Enter`.
 3. Search for `TermMate` and press `Enter`.
+
+**Or install manually from [Releases](https://github.com/flashmodel/termmate/releases):**
+
+1. Download `TermMate.sublime-package` from the [latest release](https://github.com/flashmodel/termmate/releases).
+2. Copy `TermMate.sublime-package` into your Sublime Text **Installed Packages** directory:
+   - **macOS**: `~/Library/Application Support/Sublime Text/Installed Packages/`
+   - **Windows**: `%APPDATA%\Sublime Text\Installed Packages\`
+   - **Linux**: `~/.config/sublime-text/Installed Packages/`
+3. Restart Sublime Text.
 
 ### 4. Start Chat
 
