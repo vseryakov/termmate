@@ -90,7 +90,8 @@ class AgentOptions:
         approve_mode: Optional[str] = None,
         session_id: Optional[str] = None,
         extra_env: Optional[Dict[str, str]] = None,
-        add_dirs: Optional[List[str]] = None
+        add_dirs: Optional[List[str]] = None,
+        debug_agent_message: bool = False
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -108,6 +109,7 @@ class AgentOptions:
         self.session_id = session_id
         self.extra_env = extra_env or {}
         self.add_dirs = add_dirs or []
+        self.debug_agent_message = debug_agent_message
 
 
 class BaseAgent(abc.ABC):

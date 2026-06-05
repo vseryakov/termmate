@@ -3,6 +3,9 @@
     // Valid values are "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
     "log_level": "ERROR",
 
+    // Whether to print raw agent messages to console for debugging.
+    "debug_agent_message": false,
+
     // List of tools to use without confirmation.
     "allowed_tools": ["Read", "Glob", "Grep", "TodoWrite", "WebFetch", "WebSearch", "Skill"],
 

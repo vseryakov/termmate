@@ -299,6 +299,8 @@ class PiAgent(BaseAgent):
                         data = json.loads(line)
                         message = self._parse_message(data)
                         if message is not None:
+                            if self.options.debug_agent_message:
+                                LOG.info(f"pi received: {message}")
                             await self._message_queue.put(message)
                     except json.JSONDecodeError:
                         LOG.error(f"pi non-json msg: {line[:200]}...")

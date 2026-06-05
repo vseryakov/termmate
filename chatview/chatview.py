@@ -270,7 +270,8 @@ class AgentThread(threading.Thread):
             disallowed_tools=self.anthropic_config.get("disallowed_tools"),
             approve_mode=self.anthropic_config.get("approve_mode"),
             session_id=self.anthropic_config.get("session_id"),
-            extra_env=self.anthropic_config.get("env")
+            extra_env=self.anthropic_config.get("env"),
+            debug_agent_message=self.anthropic_config.get("debug_agent_message", False)
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
@@ -1048,7 +1049,8 @@ class ChatSession:
             "agent_provider": agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "session_id": session_id,
-            "env": settings.get("env", {})
+            "env": settings.get("env", {}),
+            "debug_agent_message": settings.get("debug_agent_message", False)
         }
 
         # Initialize background agent thread
@@ -1317,8 +1319,16 @@ class ChatSession:
             "disallowed_tools": disallowed_tools,
             "agent_provider": new_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
-            "env": settings.get("env", {})
+            "env": settings.get("env", {}),
+            "debug_agent_message": settings.get("debug_agent_message", False)
         }
+
+        if new_agent_provider == "codex":
+            self.message_processor = CodexMessageProcessor(self)
+        elif new_agent_provider == "pi":
+            self.message_processor = PiMessageProcessor(self)
+        else:
+            self.message_processor = ClaudeMessageProcessor(self)
 
         cwd = get_best_dir(self.chat_view)
         self.agent_thread = AgentThread(
@@ -1368,7 +1378,8 @@ class ChatSession:
             "agent_provider": current_agent_provider,
             "approve_mode": self.window.settings().get(CHAT_APPROVE_MODE, ApproveMode.ALLOW_EDIT.value),
             "session_id": old_session_id,
-            "env": settings.get("env", {})
+            "env": settings.get("env", {}),
+            "debug_agent_message": settings.get("debug_agent_message", False)
         }
 
         cwd = get_best_dir(self.chat_view)
