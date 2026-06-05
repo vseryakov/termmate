@@ -540,13 +540,5 @@ class PiMessageProcessor(BaseChatMessageProcessor):
         elif name in ("grep", "find", "ls"):
             pattern = input_data.get("pattern") or input_data.get("query") or input_data.get("path") or input_data.get("regex") or ""
             return f"⏺ {name} {pattern}".strip()
-        elif name == "web_fetch":
-            url = input_data.get("url", "")
-            if url:
-                return f"⏺ web_fetch {url}"
-        elif name == "web_search":
-            query = input_data.get("query", "")
-            if query:
-                return f"⏺ web_search ({query})"
 
         return f"⏺ {name}" if name else ""
