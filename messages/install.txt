@@ -3,13 +3,14 @@ TermMate for Sublime Text
 
 Thank you for installing the TermMate!
 
-This plugin provides agentic coding CLIs (Claude Code and Codex) directly within Sublime Text.
+This plugin provides agentic coding CLIs (Claude Code, Codex, and Pi agent) directly within Sublime Text.
 
 Getting Started:
-- Ensure the `claude` or `codex` command-line tool is installed on your system.
+- Ensure at least one of the command-line tools (`claude`, `codex`, or `pi`) is installed on your system based on your preference.
 - Authenticate the agents via your terminal:
   - Claude Code: Run `claude /login` in your terminal.
   - Codex: Run `codex login` in your terminal.
+  - Pi Agent: Run `pi /login` in your terminal.
 - Open the command palette and type "TermMate: Start Chat".
 
 Data Privacy:

@@ -12,7 +12,7 @@ For detailed usage, please refer to the [TermMate Documentation](https://termmat
 
 ### 1. Prerequisites
 
-TermMate relies on external agent cli. Install the required CLI tools:
+TermMate relies on external agent CLIs. Install at least one of the following CLI tools based on your preference:
 
 **Claude Code:**
 ```bash
