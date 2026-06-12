@@ -104,6 +104,10 @@ You can right-click in any file, tab, and select **Chat with Agent**. This will:
 
 Type `@` in the chat view for real-time suggestions of files and workspace symbols.
 
+**Split Chat Window**
+
+You can use the command palette (`TermMate: Split Chat Window`) or right-click the chat view tab and select **TermMate: Split Chat Window** to split the editor layout and place the chat view into its own dedicated pane. By default, this pane is isolated so opening other files will not overwrite the chat view. This isolation behavior can be configured via the `dedicated_chat_pane` setting.
+
 ### Advanced Control (Pro Features)
 
 TermMate provides deep integration with agentic workflows via the Command Palette:
@@ -129,6 +133,7 @@ Effortlessly swap between Claude, Codex, Pi Agent, or custom agent providers. Fi
 | Action | macOS | Windows/Linux | Command Palette |
 | :--- | :--- | :--- | :--- |
 | **Start New Chat** | - | - | `TermMate: Start Chat` |
+| **Split Chat Window** | - | - | `TermMate: Split Chat Window` |
 | **Send Message** | `Cmd+Enter` | `Ctrl+Enter` | - |
 | **Stop Conversation** | `Cmd+Escape` | `Shift+Escape` | `TermMate: Stop Conversation` |
 | **Navigate Input History** | `Up` / `Down` | `Up` / `Down` | - |
