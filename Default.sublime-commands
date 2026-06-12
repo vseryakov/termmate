@@ -4,6 +4,10 @@
         "command": "term_chat_cli"
     },
     {
+        "caption": "TermMate: Split Chat Window",
+        "command": "term_chat_split_chat"
+    },
+    {
         "caption": "TermMate: Prompt",
         "command": "term_chat_prompt"
     },

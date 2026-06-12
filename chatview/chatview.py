@@ -1460,6 +1460,50 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         chat_view.run_command("term_chat_input_prompt", {"text": initial_msg})
 
 
+class TermChatSplitChatCommand(sublime_plugin.WindowCommand):
+    """
+    Splits the window and moves the chat view to the left-most group.
+    """
+    def run(self):
+        # Try to find existing chat view
+        chat_view = None
+        for view in self.window.views():
+            if view.settings().get(CHAT_VIEW_FLAG, False):
+                chat_view = view
+                break
+        
+        if chat_view:
+            self._split_and_move(chat_view)
+        else:
+            sublime.status_message(f"No active {PACKAGE_NAME} found to split")
+
+    def _split_and_move(self, view):
+        window = self.window
+        layout = window.get_layout()
+        cols = layout.get("cols", [0.0, 1.0])
+        
+        if len(cols) < 3:
+            # It's a single column layout. Let's split it into two columns with equal width.
+            window.set_layout({
+                "cols": [0.0, 0.5, 1.0],
+                "rows": [0.0, 1.0],
+                "cells": [[0, 0, 1, 1], [1, 0, 2, 1]]
+            })
+            
+            # Since we just split, all existing views are in group 0.
+            # Move all views EXCEPT the chat view to group 1 (right side).
+            for v in window.views_in_group(0):
+                if v.id() != view.id():
+                    window.set_view_index(v, 1, 0)
+            
+            
+        # Ensure the chat view is in the left-most group (group 0)
+        window.set_view_index(view, 0, 0)
+        # Focus the chat view
+        window.focus_group(0)
+        window.focus_view(view)
+
+
 class TermChatSendInputCommand(sublime_plugin.TextCommand):
     """
     Handles the input submission (bound to Ctrl+Enter).

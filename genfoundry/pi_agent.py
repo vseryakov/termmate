@@ -390,7 +390,7 @@ class PiAgent(BaseAgent):
                     desc = m.get("description", "")
                     
                     term_models.append({
-                        "displayName": f"[{provider}] {name}",
+                        "displayName": f"[{provider}]{name}",
                         "description": desc,
                         "value": f"{provider}/{model_id}"
                     })

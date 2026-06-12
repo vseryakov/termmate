@@ -1,0 +1,7 @@
+[
+    { "caption": "-" },
+    {
+        "caption": "TermMate: Split Chat Window",
+        "command": "term_chat_split_chat"
+    }
+]
