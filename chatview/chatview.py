@@ -1432,7 +1432,7 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set("word_wrap", True)
         chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
-        shortcut = "Command+Enter" if sublime.platform() == "osx" else "Control+Enter"
+        shortcut = "Command+Enter" if sublime.platform() == "osx" else "Ctrl+Enter"
         welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
 
         chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent\n"})
