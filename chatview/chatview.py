@@ -1464,7 +1464,21 @@ class TermChatSplitChatCommand(sublime_plugin.WindowCommand):
     """
     Splits the window and moves the chat view to the left-most group.
     """
-    def run(self):
+    def is_visible(self, group=-1, index=-1):
+        # Called from tab context menu
+        if group >= 0 and index >= 0:
+            views = self.window.views_in_group(group)
+            if index < len(views):
+                view = views[index]
+                return view.settings().get(CHAT_VIEW_FLAG, False)
+            return False
+        # Called from command palette
+        for view in self.window.views():
+            if view.settings().get(CHAT_VIEW_FLAG, False):
+                return True
+        return False
+
+    def run(self, group=-1, index=-1):
         # Try to find existing chat view
         chat_view = None
         for view in self.window.views():
@@ -1492,7 +1506,7 @@ class TermChatSplitChatCommand(sublime_plugin.WindowCommand):
             
             # Since we just split, all existing views are in group 0.
             # Move all views EXCEPT the chat view to group 1 (right side).
-            for v in window.views_in_group(0):
+            for v in list(window.views_in_group(0)):
                 if v.id() != view.id():
                     window.set_view_index(v, 1, 0)
             
@@ -1603,15 +1617,41 @@ class TermChatHistoryDownCommand(sublime_plugin.TextCommand):
 
 class ChatViewListener(sublime_plugin.EventListener):
     def on_load(self, view):
-        """
-        Reconnect a restored chat view when it is loaded asynchronously
-        (e.g., after a Sublime Text restart).
-        """
-        if not view.settings().get(CHAT_VIEW_FLAG, False):
-            return
         window = view.window()
-        if window and window.id() not in chatview_clients:
-            sublime.set_timeout(lambda: _reconnect_chat_view(view), 100)
+        if not window:
+            return
+
+        # reconnect restored chat view
+        if view.settings().get(CHAT_VIEW_FLAG, False):
+            if window.id() not in chatview_clients:
+                sublime.set_timeout(lambda: _reconnect_chat_view(view), 100)
+            return
+
+        # redirect non-chat views away from the chat group (split layout only)
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        if not settings.get("dedicated_chat_pane", True):
+            return
+
+        if window.num_groups() <= 1 or window.id() not in chatview_clients:
+            return
+
+        # Ignore widgets like the console or input panels
+        if view.settings().get('is_widget'):
+            return
+
+        group, _ = window.get_view_index(view)
+        if group == -1:
+            return
+
+        # Check if a ChatView occupies this group, then redirect to any other group
+        for v in window.views_in_group(group):
+            if v.settings().get(CHAT_VIEW_FLAG, False):
+                for g in range(window.num_groups()):
+                    if g != group:
+                        window.set_view_index(view, g, 0)
+                        window.focus_view(view)
+                        break
+                break
 
     def on_close(self, view):
         """
