@@ -71,6 +71,9 @@ class PiAgent(BaseAgent):
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._session_id: Optional[str] = None
 
+        # Plan mode: mutable at runtime
+        self.plan_mode: bool = getattr(self.options, "plan_mode", False)
+
         # Find pi executable
         cli_command = self.options.cli_path or "pi"
         self.cli_path = shutil.which(cli_command) or find_pi_cli() or cli_command
@@ -124,7 +127,14 @@ class PiAgent(BaseAgent):
             flag = self._get_session_flag()
             cmd.extend([flag, self.options.session_id])
 
-        # Note: Plan mode is specifically NOT supported for pi agent
+        # Load built-in plan mode extension if available
+        ext_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "extensions", "pi-plan-mode")
+        if os.path.exists(ext_dir):
+            cmd.extend(["--extension", ext_dir])
+
+        # Enable plan mode via flag if configured
+        if getattr(self.options, "plan_mode", False):
+            cmd.append("--plan")
 
         # Add system prompt if specified
         system_prompt = self.options.system_prompt or ""
@@ -247,6 +257,20 @@ class PiAgent(BaseAgent):
         if not self.is_connected:
             raise RuntimeError("Client is not connected. Call connect() first.")
         
+        if proceed_plan:
+            self.plan_mode = False
+            # Send /plan implement as a prompt so that the extension parses the command
+            import uuid
+            message = {
+                "type": "prompt",
+                "message": "/plan implement",
+                "id": str(uuid.uuid4())
+            }
+            if self._session_id:
+                message["session_id"] = self._session_id
+            await self._write_json(message)
+            return
+
         request = {
             "type": "steer",
             "message": text

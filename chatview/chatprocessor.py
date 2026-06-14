@@ -363,13 +363,40 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
         return f"⏺ {name}" if name else ""
 
 class PiMessageProcessor(BaseChatMessageProcessor):
+    def __init__(self, session):
+        super().__init__(session)
+        self._in_plan = False
+        self._plan_text = ""
+
     def _handle_typed_message(self, message):
         if message.type == "text_delta":
             self.session.start_loading()
             if self.last_is_tool_call:
                 self.append_content("\n")
                 self.last_is_tool_call = False
-            self.append_content(message.content)
+            
+            text = message.content
+            if not self._in_plan:
+                if "<proposed_plan>" in text:
+                    parts = text.split("<proposed_plan>", 1)
+                    if parts[0]:
+                        self.append_content(parts[0])
+                    self._in_plan = True
+                    self._plan_text += parts[1]
+                    self.append_content("\n\n**Proposed Plan**\n\n" + parts[1])
+                else:
+                    self.append_content(text)
+            else:
+                if "</proposed_plan>" in text:
+                    parts = text.split("</proposed_plan>", 1)
+                    self._plan_text += parts[0]
+                    self._in_plan = False
+                    self.append_content(parts[0])
+                    if parts[1]:
+                        self.append_content(parts[1])
+                else:
+                    self._plan_text += text
+                    self.append_content(text)
             return
             
         if message.type == "text_end":
@@ -427,6 +454,15 @@ class PiMessageProcessor(BaseChatMessageProcessor):
             # Stop loading on turn completion (heuristic)
             self.session.stop_loading()
             self.append_content("\n")
+
+        elif message.type == "message_end":
+            if isinstance(message.content, dict) and message.content.get("customType") == "proposed-plan":
+                plan_text = message.content.get("content", "")
+                if plan_text.startswith("**Proposed Plan**\n\n"):
+                    plan_text = plan_text[len("**Proposed Plan**\n\n"):]
+                
+                plan_text = plan_text.strip()
+                sublime.set_timeout(lambda pt=plan_text: self.session.show_implement_plan_button(pt, tool_name="PiImplementPlan"), 0)
 
         elif message.type == "control_response":
             if hasattr(message, "content") and isinstance(message.content, dict):

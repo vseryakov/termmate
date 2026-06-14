@@ -655,7 +655,7 @@ class PermissionPanel:
             self.diff_data[request_id] = (old_text, new_text, name)
             return f'📄 <a href="show_diff" class="file-link">{name}</a>'
 
-        elif tool_name in ("ExitPlanMode", "CodexImplementPlan"):
+        elif tool_name in ("ExitPlanMode", "CodexImplementPlan", "PiImplementPlan"):
             plan = input_data.get("plan", "")
             first_line = plan.split("\n")[0] if plan else "Empty Plan"
             self.diff_data[request_id] = ("", plan, "Implementation Plan")
@@ -724,7 +724,7 @@ class PermissionPanel:
         if approve_mode in (ApproveMode.DEFAULT.value, ApproveMode.ALLOW_EDIT.value):
             allow_chat_btn = '<a href="allow_chat" class="btn btn-chat">Allow for this chat</a>'
 
-        allow_btn_text = "Implement the Plan" if tool_name in ("ExitPlanMode", "CodexImplementPlan") else "Allow"
+        allow_btn_text = "Implement the Plan" if tool_name in ("ExitPlanMode", "CodexImplementPlan", "PiImplementPlan") else "Allow"
 
         return f"""
         <body id="permission-{request_id}">
@@ -1135,7 +1135,7 @@ class ChatSession:
         if request_id in self.permission_requests:
             tool_name, input_data = self.permission_requests[request_id]
 
-            if tool_name == "CodexImplementPlan":
+            if tool_name in ("CodexImplementPlan", "PiImplementPlan"):
                 if action in ("allow", "allow_chat"):
                     self.window.run_command("term_chat_implement_plan")
                 self.clear_permission_phantom(request_id)
@@ -1205,11 +1205,11 @@ class ChatSession:
         if self.agent_thread:
             self.agent_thread.stop()
 
-    def show_implement_plan_button(self, plan_text=""):
+    def show_implement_plan_button(self, plan_text="", tool_name="CodexImplementPlan"):
         """Show a phantom button to trigger plan implementation via PermissionPanel."""
         request_id = f"codex_plan_{id(self)}"
-        self.permission_requests[request_id] = ("CodexImplementPlan", {"plan": plan_text})
-        self.permission_panel.show(request_id, "CodexImplementPlan", {"plan": plan_text})
+        self.permission_requests[request_id] = (tool_name, {"plan": plan_text})
+        self.permission_panel.show(request_id, tool_name, {"plan": plan_text})
 
     @property
     def plan_mode(self):

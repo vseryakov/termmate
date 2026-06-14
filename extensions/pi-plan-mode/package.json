@@ -1,0 +1,12 @@
+{
+	"name": "pi-plan-mode-codeform",
+	"version": "1.0.0",
+	"description": "TermMate internal Plan Mode extension for Pi Agent.",
+	"type": "module",
+	"private": true,
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	}
+}
