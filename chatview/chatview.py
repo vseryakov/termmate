@@ -1136,8 +1136,26 @@ class ChatSession:
             tool_name, input_data = self.permission_requests[request_id]
 
             if tool_name in ("CodexImplementPlan", "PiImplementPlan"):
-                if action in ("allow", "allow_chat"):
+                if action == "allow":
                     self.window.run_command("term_chat_implement_plan")
+                self.clear_permission_phantom(request_id)
+                del self.permission_requests[request_id]
+                return
+
+            if tool_name == "ExitPlanMode":
+                # Claude CLI's ExitPlanMode is a real control_request that needs a response
+                if action == "allow":
+                    self.send_permission_response(request_id, {
+                        "behavior": "allow",
+                        "updatedInput": input_data
+                    })
+                    # Force UI out of plan mode so subsequent turns use fast mode
+                    self.window.run_command("term_chat_toggle_plan_mode", {"mode": "fast"})
+                else:
+                    self.send_permission_response(request_id, {
+                        "behavior": "deny",
+                        "message": "User chose to stay in plan mode"
+                    })
                 self.clear_permission_phantom(request_id)
                 del self.permission_requests[request_id]
                 return
@@ -2440,4 +2458,7 @@ class TermChatImplementPlanCommand(sublime_plugin.WindowCommand):
             # For Codex, we must explicitly exit Plan mode to execute.
             # We use proceed_plan=True to signal CodexAgent to switch mode to 'default' for this turn.
             session.steer("Implement the plan.", proceed_plan=True)
+            
+            # Force the UI out of plan mode so subsequent turns don't trigger planning.
+            self.window.run_command("term_chat_toggle_plan_mode", {"mode": "fast"})
 
