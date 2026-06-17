@@ -462,7 +462,7 @@ class PiMessageProcessor(BaseChatMessageProcessor):
                     plan_text = plan_text[len("**Proposed Plan**\n\n"):]
                 
                 plan_text = plan_text.strip()
-                sublime.set_timeout(lambda pt=plan_text: self.session.show_implement_plan_button(pt, tool_name="PiImplementPlan"), 0)
+                sublime.set_timeout(lambda pt=plan_text: self.session.show_implement_plan_button(pt, tool_name="ImplementPlan"), 0)
 
         elif message.type == "control_response":
             if hasattr(message, "content") and isinstance(message.content, dict):
