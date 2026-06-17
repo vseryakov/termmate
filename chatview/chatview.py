@@ -1073,6 +1073,23 @@ class ChatSession:
             return
         view.settings().set(CHAT_SESSION_ID, session_id)
 
+    def sync_pi_approve_mode(self, mode):
+        """Sends a phantom command to pi agent to sync approve mode."""
+        if self.agent_thread and self.agent_thread.agent and self.agent_thread.agent.is_connected:
+            if isinstance(self.message_processor, PiMessageProcessor):
+                import uuid
+                message = {
+                    "type": "prompt",
+                    "message": f"/termchat-setting approve_mode={mode}",
+                    "id": str(uuid.uuid4())
+                }
+                if hasattr(self.agent_thread.agent, "_write_json"):
+                    import asyncio
+                    asyncio.run_coroutine_threadsafe(
+                        self.agent_thread.agent._write_json(message),
+                        self.agent_thread.loop
+                    )
+
     def _get_disallowed_tools(self, settings):
         """Returns a list of disallowed tools based on settings."""
         disallowed_tools = settings.get("disallowed_tools", [])
@@ -1156,6 +1173,16 @@ class ChatSession:
                         "behavior": "deny",
                         "message": "User chose to stay in plan mode"
                     })
+                self.clear_permission_phantom(request_id)
+                del self.permission_requests[request_id]
+                return
+
+            if tool_name == "termchat_tool_permission":
+                if action in ("allow", "allow_chat"):
+                    response_data = {"confirmed": True}
+                else:
+                    response_data = {"cancelled": True}
+                self.send_permission_response(request_id, response_data, is_extension_ui=True)
                 self.clear_permission_phantom(request_id)
                 del self.permission_requests[request_id]
                 return
@@ -2387,6 +2414,12 @@ class TermChatSetApproveModeCommand(sublime_plugin.WindowCommand):
     def run(self, mode):
         self.window.settings().set(CHAT_APPROVE_MODE, mode)
         sublime.status_message(f"Approve mode set to: {mode}")
+        
+        window_id = self.window.id()
+        if window_id in chatview_clients:
+            session = chatview_clients[window_id]
+            if self.window.settings().get(CHAT_AGENT) == "pi":
+                session.sync_pi_approve_mode(mode)
 
     def input(self, args):
         if "mode" not in args:

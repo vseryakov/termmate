@@ -438,6 +438,22 @@ class PiMessageProcessor(BaseChatMessageProcessor):
             request_id = request.get("id")
             title = request.get("title", method)
             
+            if method == "confirm" and isinstance(title, str) and title.startswith("Tool Permission: "):
+                try:
+                    import json
+                    parsed_msg = json.loads(request.get("message", "{}"))
+                    real_tool_name = parsed_msg.get("toolName")
+                    real_input = parsed_msg.get("input", {})
+                    if real_tool_name:
+                        # Use the real tool name for the phantom so it formats correctly
+                        # Capitalize to match Claude/Codex conventions like "Bash", "Edit"
+                        display_tool_name = real_tool_name.capitalize() if real_tool_name in ("bash", "read", "write", "edit", "grep", "find", "ls") else real_tool_name
+                        self.session.permission_requests[request_id] = ("termchat_tool_permission", request)
+                        self.session.show_permission_phantom(request_id, display_tool_name, real_input)
+                        return
+                except Exception as e:
+                    LOG.error(f"Failed to parse termchat tool permission request: {e}")
+
             tool_name = f"extension_ui_{method}"
             self.session.permission_requests[request_id] = (tool_name, request)
             

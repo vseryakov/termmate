@@ -132,6 +132,11 @@ class PiAgent(BaseAgent):
         if os.path.exists(ext_dir):
             cmd.extend(["--extension", ext_dir])
 
+        # Load termchat extension for tool permission support
+        termchat_ext_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "extensions", "termchat")
+        if os.path.exists(termchat_ext_dir):
+            cmd.extend(["--extension", termchat_ext_dir])
+
         # Enable plan mode via flag if configured
         if getattr(self.options, "plan_mode", False):
             cmd.append("--plan")
@@ -163,6 +168,9 @@ class PiAgent(BaseAgent):
 
         # Set up environment
         env = os.environ.copy()
+
+        if hasattr(self.options, "approve_mode") and self.options.approve_mode:
+            env["PI_TERMMATE_APPROVE_MODE"] = self.options.approve_mode
 
         # Inject user-defined extra environment variables
         if self.options.extra_env:
