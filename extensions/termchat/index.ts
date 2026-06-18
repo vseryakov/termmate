@@ -10,6 +10,13 @@ const ALLOW_EDIT_SAFE_TOOLS = new Set([
 ]);
 
 export default function termchat(pi: ExtensionAPI) {
+	pi.on("session_start", async () => {
+		const activeTools = pi.getActiveTools();
+		const additionalBuiltIns = ["grep", "find", "ls"];
+		const newTools = new Set([...activeTools, ...additionalBuiltIns]);
+		pi.setActiveTools([...newTools]);
+	});
+
 	let currentApproveMode = process.env.PI_TERMMATE_APPROVE_MODE || "allow-edit";
 
 	pi.on("input", async (event) => {
