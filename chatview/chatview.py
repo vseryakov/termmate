@@ -444,6 +444,12 @@ class AgentThread(threading.Thread):
             if isinstance(self.agent, CodexAgent):
                 self.agent.plan_mode = plan_mode
                 LOG.info(f"Updated Codex plan_mode to: {plan_mode}")
+            elif isinstance(self.agent, PiAgent):
+                asyncio.run_coroutine_threadsafe(
+                    self.agent.set_plan_mode(plan_mode),
+                    self.loop
+                )
+                LOG.info(f"Updated Pi plan_mode to: {plan_mode}")
             elif isinstance(self.agent, ClaudeCodeAgent):
                 # Map boolean plan_mode to CLI permission mode
                 # If plan_mode is True, use 'plan'

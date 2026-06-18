@@ -261,6 +261,22 @@ class PiAgent(BaseAgent):
         }
         await self._write_json(request)
 
+    async def set_plan_mode(self, plan_mode: bool) -> None:
+        """Dynamically set the plan mode for the pi process."""
+        if not self.is_connected:
+            return
+            
+        self.plan_mode = plan_mode
+        import uuid
+        message = {
+            "type": "prompt",
+            "message": "/plan" if plan_mode else "/plan exit",
+            "id": str(uuid.uuid4())
+        }
+        if self._session_id:
+            message["session_id"] = self._session_id
+        await self._write_json(message)
+
     async def steer(self, text: str, proceed_plan: bool = False) -> None:
         if not self.is_connected:
             raise RuntimeError("Client is not connected. Call connect() first.")
