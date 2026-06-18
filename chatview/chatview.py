@@ -499,6 +499,10 @@ class ModelPanel:
         # Keep the display key in sync
         self.window.settings().set(CHAT_MODEL, model)
 
+        display_model = model
+        if agent_provider == "pi" and display_model and "/" in display_model:
+            display_model = display_model.split("/", 1)[-1]
+
         plan_tag_html = ""
         if plan_mode == PlanMode.PLANNING:
             plan_tag_html = """
@@ -557,7 +561,7 @@ class ModelPanel:
                 </a>
                 <a href="set_model" class="model-tag" style="margin-left: 8px;">
                     <span class="label">Model:</span>
-                    <span class="value">{model}</span>
+                    <span class="value">{display_model}</span>
                 </a>{plan_tag_html}
             </div>
         </body>
