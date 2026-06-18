@@ -558,7 +558,13 @@ class PiMessageProcessor(BaseChatMessageProcessor):
         elif name == "bash":
             command = input_data.get("command", "")
             if command:
-                return f"⏺ bash {command}"
+                lines = command.rstrip().splitlines()
+                if len(lines) > 1:
+                    first_line = lines[0]
+                    indented_rest = "\n".join("    " + line for line in lines[1:])
+                    return f"⏺ bash {first_line}\n\n{indented_rest}\n"
+                elif len(lines) == 1:
+                    return f"⏺ bash {lines[0]}"
 
         elif name in ("write", "edit"):
             file_path = input_data.get("file_path") or input_data.get("path") or ""
