@@ -367,6 +367,7 @@ class PiMessageProcessor(BaseChatMessageProcessor):
         super().__init__(session)
         self._in_plan = False
         self._plan_text = ""
+        self._text_buffer = ""
 
     def _handle_typed_message(self, message):
         if message.type == "text_delta":
@@ -375,33 +376,53 @@ class PiMessageProcessor(BaseChatMessageProcessor):
                 self.append_content("\n")
                 self.last_is_tool_call = False
             
-            text = message.content
-            if not self._in_plan:
-                if "<proposed_plan>" in text:
-                    parts = text.split("<proposed_plan>", 1)
-                    if parts[0]:
+            self._text_buffer += message.content
+
+            while True:
+                if not self._in_plan:
+                    if "<proposed_plan>" in self._text_buffer:
+                        parts = self._text_buffer.split("<proposed_plan>", 1)
+                        if parts[0]:
+                            self.append_content(parts[0])
+                        self._in_plan = True
+                        self._text_buffer = parts[1]
+                        self.append_content("\n\n**Proposed Plan**\n\n")
+                    else:
+                        flush_index = len(self._text_buffer)
+                        for i in range(len(self._text_buffer)):
+                            if "<proposed_plan>".startswith(self._text_buffer[i:]):
+                                flush_index = i
+                                break
+                        if flush_index > 0:
+                            self.append_content(self._text_buffer[:flush_index])
+                            self._text_buffer = self._text_buffer[flush_index:]
+                        break
+                else:
+                    if "</proposed_plan>" in self._text_buffer:
+                        parts = self._text_buffer.split("</proposed_plan>", 1)
+                        self._plan_text += parts[0]
                         self.append_content(parts[0])
-                    self._in_plan = True
-                    self._plan_text += parts[1]
-                    self.append_content("\n\n**Proposed Plan**\n\n" + parts[1])
-                else:
-                    self.append_content(text)
-            else:
-                if "</proposed_plan>" in text:
-                    parts = text.split("</proposed_plan>", 1)
-                    self._plan_text += parts[0]
-                    self._in_plan = False
-                    self.append_content(parts[0])
-                    if parts[1]:
-                        self.append_content(parts[1])
-                else:
-                    self._plan_text += text
-                    self.append_content(text)
+                        self._in_plan = False
+                        self._text_buffer = parts[1]
+                    else:
+                        flush_index = len(self._text_buffer)
+                        for i in range(len(self._text_buffer)):
+                            if "</proposed_plan>".startswith(self._text_buffer[i:]):
+                                flush_index = i
+                                break
+                        if flush_index > 0:
+                            self._plan_text += self._text_buffer[:flush_index]
+                            self.append_content(self._text_buffer[:flush_index])
+                            self._text_buffer = self._text_buffer[flush_index:]
+                        break
             return
             
         if message.type == "text_end":
-            # The text was already appended via text_delta, so we just ignore this message
-            # to prevent duplicating the entire chunk.
+            if self._text_buffer:
+                if self._in_plan:
+                    self._plan_text += self._text_buffer
+                self.append_content(self._text_buffer)
+                self._text_buffer = ""
             return
             
         if message.type in ("thinking_start", "thinking_delta"):
