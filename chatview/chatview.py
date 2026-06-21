@@ -171,13 +171,15 @@ class LoadingAnimation:
         self.view = view
         self.phantom_set = sublime.PhantomSet(view, "chatview_loading")
         self.is_loading = False
+        self.loading_text = None
         self.frame_index = 0
         self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-    def start(self, region):
+    def start(self, region, text=None):
         """Start the loading animation at the specified region."""
         # ALWAYS update the region provider, even if already loading
         self.region_provider = region
+        self.loading_text = text
 
         if not self.is_loading:
             self.is_loading = True
@@ -203,6 +205,10 @@ class LoadingAnimation:
 
         frame = self.frames[self.frame_index % len(self.frames)]
 
+        text_html = ""
+        if self.loading_text:
+            text_html = f" <span style='font-weight: normal; opacity: 0.8;'>{self.loading_text}</span>"
+
         html = f"""
         <body id="chatview-loading" style="background-color: transparent; margin: 0; padding: 0;">
             <style>
@@ -214,7 +220,7 @@ class LoadingAnimation:
                     font-family: var(--font-mono);
                 }}
             </style>
-            <div class="loading">{frame}</div>
+            <div class="loading">{frame}{text_html}</div>
         </body>
         """
 
@@ -1240,9 +1246,9 @@ class ChatSession:
         """Handle messages received from the agent thread."""
         self.message_processor.handle_message(message)
 
-    def start_loading(self):
+    def start_loading(self, text=None):
         """Start the loading animation."""
-        sublime.set_timeout(lambda: self.loading_animation.start(self.loading_region), 0)
+        sublime.set_timeout(lambda: self.loading_animation.start(self.loading_region, text), 0)
 
     def stop_loading(self):
         sublime.set_timeout(lambda: self.loading_animation.stop(), 0)

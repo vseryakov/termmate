@@ -426,7 +426,7 @@ class PiMessageProcessor(BaseChatMessageProcessor):
             return
             
         if message.type in ("thinking_start", "thinking_delta"):
-            self.session.start_loading()
+            self.session.start_loading(text="thinking")
             return
 
         if message.type == "assistant":
