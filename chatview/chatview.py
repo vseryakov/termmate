@@ -2482,7 +2482,7 @@ class TermChatPermissionActionCommand(sublime_plugin.WindowCommand):
         window_id = self.window.id()
         if window_id in chatview_clients:
             session = chatview_clients[window_id]
-            session.handle_permission_action(request_id, action)
+            session._handle_permission_decision(request_id, action)
 
 
 class TermChatImplementPlanCommand(sublime_plugin.WindowCommand):
