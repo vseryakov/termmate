@@ -15,6 +15,7 @@ from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
 from ..genfoundry.pi_agent import find_pi_cli
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
+from .chatpanel import RewindConfirmPanel
 
 def get_available_agents(settings):
     """Returns a list of available agents."""
@@ -277,7 +278,8 @@ class AgentThread(threading.Thread):
             approve_mode=self.anthropic_config.get("approve_mode"),
             session_id=self.anthropic_config.get("session_id"),
             extra_env=self.anthropic_config.get("env"),
-            debug_agent_message=self.anthropic_config.get("debug_agent_message", False)
+            debug_agent_message=self.anthropic_config.get("debug_agent_message", False),
+            enable_file_checkpointing=self.anthropic_config.get("agent_provider", "claude") == "claude",
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")
@@ -333,14 +335,36 @@ class AgentThread(threading.Thread):
                 lambda: asyncio.create_task(self._steer(text, proceed_plan=proceed_plan))
             )
 
+    def rewind(self, user_message_id: str, on_done: callable = None) -> None:
+        """Run the full rewind sequence on the live agent loop (rewind_files + fork).
+
+        on_done(new_session_id) is called on the Sublime main thread when complete.
+        on_done(None) is called if rewind is not supported or fails.
+        """
+        if not self.loop or not self.running or not self.agent:
+            if on_done:
+                sublime.set_timeout(lambda: on_done(None), 0)
+            return
+
+        async def _run():
+            new_session_id = None
+            if hasattr(self.agent, "rewind"):
+                try:
+                    new_session_id = await self.agent.rewind(user_message_id)
+                except Exception as e:
+                    LOG.error(f"[rewind] agent.rewind failed: {e}", exc_info=True)
+            if on_done:
+                sublime.set_timeout(lambda: on_done(new_session_id), 0)
+
+        self.loop.call_soon_threadsafe(lambda: asyncio.create_task(_run()))
+
     @property
     def session_id(self):
         """Get the session id of the current running agent."""
         if self.agent:
-            if hasattr(self.agent, "_session_id"):
-                return self.agent._session_id
-            if hasattr(self.agent, "thread_id"):
-                return self.agent.thread_id
+            sid = getattr(self.agent, "_session_id", None) or getattr(self.agent, "thread_id", None)
+            if sid:
+                return sid
         return self.anthropic_config.get("session_id")
 
     async def _receive_messages(self):
@@ -1006,6 +1030,7 @@ class ChatSession:
         self.loading_animation = LoadingAnimation(self.chat_view)
 
         self.model_phantom = ModelPanel(self.chat_view, self.window)
+        self.rewind_confirm_panel = RewindConfirmPanel(self.chat_view)
         self.permission_panel = PermissionPanel(
             self.chat_view, self.window, self._handle_permission_decision
         )
@@ -1014,7 +1039,8 @@ class ChatSession:
         self.history_stash = ""
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.available_models = []  # Will be populated from control_response
-        self.prompt_regions = [] # List of Regions for submitted prompts
+        self.prompt_regions = [] # List of (Region, uuid) for submitted prompts
+        self.prompt_button_phantoms = [] # List of PhantomSet, parallel to prompt_regions
         self.session_allow_all = False
         # Only persist session_id after the first user message
         self.has_sent_message = bool(session_id)
@@ -1261,6 +1287,7 @@ class ChatSession:
     def stop(self):
         self.loading_animation.stop()
         self.model_phantom.clear()
+        self.rewind_confirm_panel.clear()
         self.permission_panel.clear_all()
         self.implement_plan_phantoms.update([])
         if self.agent_thread:
@@ -1289,6 +1316,7 @@ class ChatSession:
 
     def send_input(self, user_input, region=None):
         """Start animation and send to agent."""
+        self.rewind_confirm_panel.clear()
         if not self.agent_thread:
             self.chat_view.run_command("term_chat_output_append",
                 {"text": f"\n\n⚠️ Error: No agent CLI found.\n\n"})
@@ -1310,20 +1338,143 @@ class ChatSession:
             self.agent_thread.steer(text, proceed_plan=proceed_plan)
 
     def add_prompt_highlight(self, region):
-        """Add a gutter highlight to the specified prompt region."""
-        self.prompt_regions.append(region)
+        """Add a gutter highlight and an end-of-line rewind button for a submitted prompt."""
+        index = len(self.prompt_regions)
+        self.prompt_regions.append((region, None))
+        phantom_set = sublime.PhantomSet(self.chat_view, f"chatview_rewind_btn_{index}")
+        self.prompt_button_phantoms.append(phantom_set)
+        self._redraw_prompt_highlights()
+        # Button starts greyed out — uuid not yet available
+        self._draw_prompt_button(index, active=False)
+
+    def update_last_prompt_uuid(self, uuid):
+        """Attach the echoed user message UUID to the most recent prompt region."""
+        if not self.prompt_regions:
+            return
+        index = len(self.prompt_regions) - 1
+        region, _ = self.prompt_regions[index]
+        self.prompt_regions[index] = (region, uuid)
+        # Activate the button now that we have a uuid
+        self._draw_prompt_button(index, active=True)
+
+    def _draw_prompt_button(self, index, active):
+        """Draw (or redraw) the end-of-line rewind button phantom for prompt at index."""
+        if index >= len(self.prompt_regions) or index >= len(self.prompt_button_phantoms):
+            return
+        region, _uuid = self.prompt_regions[index]
+        phantom_set = self.prompt_button_phantoms[index]
+
+        # Anchor at the end of the last line of the user's text.
+        # region.end() may point past the user's text if the view grew after
+        # submit (next prompt appended), so clamp to the line boundary.
+        last_char = max(region.begin(), region.end() - 1)
+        end_point = self.chat_view.line(last_char).end()
+        anchor = sublime.Region(end_point, end_point)
+
+        if active:
+            html = (
+                "<body style='margin:0;padding:0'>"
+                "<a href='rewind' style='color:var(--orangish);text-decoration:none;"
+                "font-size:0.85em;opacity:0.7;padding:2px 10px;display:inline-block;'>↩</a>"
+                "</body>"
+            )
+            def on_navigate(href, idx=index):
+                if href != "rewind":
+                    return
+                if self.rewind_confirm_panel.visible:
+                    self.rewind_confirm_panel.clear()
+                    return
+                r, _ = self.prompt_regions[idx]
+                def on_confirm(i=idx):
+                    sublime.status_message(f"Rewinding to prompt {i + 1}...")
+                    self.rewind_to_prompt(i)
+                self.rewind_confirm_panel.show(r, idx, on_confirm)
+        else:
+            html = (
+                "<body style='margin:0;padding:0'>"
+                "<span style='color:var(--foreground);"
+                "font-size:0.85em;opacity:0.25;padding:2px 10px;display:inline-block;'>↩</span>"
+                "</body>"
+            )
+            on_navigate = None
+
+        phantom_set.update([sublime.Phantom(
+            anchor, html, sublime.LAYOUT_INLINE, on_navigate
+        )])
+
+    def _redraw_prompt_highlights(self):
+        """Redraw all gutter dots from prompt_regions."""
         self.chat_view.add_regions(
             PROMPT_HIGHLIGHT_KEY,
-            self.prompt_regions,
+            [r for r, *_ in self.prompt_regions],
             PROMPT_HIGHLIGHT_SCOPE,
             PROMPT_HIGHLIGHT_ICON,
             PROMPT_HIGHLIGHT_FLAGS
         )
 
     def clear_prompt_highlights(self):
-        """Clear all prompt gutter highlights."""
+        """Clear all prompt gutter highlights and inline buttons."""
         self.prompt_regions = []
         self.chat_view.erase_regions(PROMPT_HIGHLIGHT_KEY)
+        for phantom_set in self.prompt_button_phantoms:
+            phantom_set.update([])
+        self.prompt_button_phantoms = []
+
+    def rewind_to_prompt(self, prompt_index):
+        """Fork the current session up to prompt_index and restart the agent on the fork."""
+        if prompt_index < 0 or prompt_index >= len(self.prompt_regions):
+            return
+
+        _region, user_message_uuid = self.prompt_regions[prompt_index]
+        session_id = self.agent_thread.session_id if self.agent_thread else None
+
+        if not session_id:
+            LOG.warning("[rewind] no active session ID")
+            sublime.status_message("Rewind: no active session ID found")
+            return
+
+        if not user_message_uuid:
+            LOG.warning(f"[rewind] no uuid for prompt {prompt_index}")
+            sublime.status_message("Rewind: message UUID not yet available for this prompt")
+            return
+
+        self.stop_loading()
+
+        def _on_rewind(new_session_id):
+            if new_session_id is None:
+                sublime.status_message("Rewind failed: see console for details")
+                return
+            self._on_rewind_complete(new_session_id, prompt_index)
+
+        self.agent_thread.rewind(user_message_uuid, on_done=_on_rewind)
+
+    def _on_rewind_complete(self, new_session_id, prompt_index):
+        """Called on main thread after fork completes; restarts agent on forked session."""
+        region, _uuid = self.prompt_regions[prompt_index]
+        cut_point = region.begin() - len(PROMPT_PREFIX)
+
+        # Clear button phantoms for trimmed prompts
+        for phantom_set in self.prompt_button_phantoms[prompt_index:]:
+            phantom_set.update([])
+        self.prompt_regions = self.prompt_regions[:prompt_index]
+        self.prompt_button_phantoms = self.prompt_button_phantoms[:prompt_index]
+        self._redraw_prompt_highlights()
+
+        self.session_allow_all = False
+        self.has_sent_message = True
+        self.chat_view.settings().set(CHAT_SESSION_ID, new_session_id)
+
+        if cut_point >= 0:
+            self.chat_view.run_command("term_chat_rewind_truncate", {"cut_point": cut_point})
+        else:
+            self.chat_view.run_command("term_chat_input_prompt", {"text": ""})
+
+        self.chat_view.run_command(
+            "term_chat_output_append",
+            {"text": "\n■ Rewind conversation to earlier checkpoint\n"}
+        )
+
+        self.reload_agent(session_id_override=new_session_id, quiet=True)
 
     def reset_session(self):
         """Reset the chat session by restarting the agent and notifying in UI."""
@@ -1401,14 +1552,17 @@ class ChatSession:
         switch_msg = f"\n\n[Switched agent to: {new_agent_provider}]\n\n"
         self.chat_view.run_command("term_chat_output_append", {"text": switch_msg})
 
-    def reload_agent(self, plan_mode=None):
+    def reload_agent(self, plan_mode=None, session_id_override=None, quiet=False):
         """Restart the current agent process, optionally with a new plan mode or resuming session."""
         self.stop_loading()
 
         # Get current session_id to resume if possible
-        old_session_id = None
-        if self.agent_thread:
+        if session_id_override is not None:
+            old_session_id = session_id_override
+        elif self.agent_thread:
             old_session_id = self.agent_thread.session_id
+        else:
+            old_session_id = None
 
         current_agent_provider = self.window.settings().get(CHAT_AGENT, "claude")
 
@@ -1450,11 +1604,12 @@ class ChatSession:
         self.agent_thread.start()
         LOG.info(f"Reconnected agent: {current_agent_provider} (resume: {bool(old_session_id)})")
 
-        if old_session_id:
-            msg = f"\n\n[Plan mode changed, resuming session {old_session_id}...]\n\n"
-        else:
-            msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
-        self.chat_view.run_command("term_chat_output_append", {"text": msg})
+        if not quiet:
+            if old_session_id:
+                msg = f"\n\n[Plan mode changed, resuming session {old_session_id}...]\n\n"
+            else:
+                msg = f"\n\n[Plan mode changed, reconnecting agent...]\n\n"
+            self.chat_view.run_command("term_chat_output_append", {"text": msg})
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
@@ -1928,6 +2083,31 @@ class ChatViewListener(sublime_plugin.EventListener):
 
         return sublime.CompletionList(completions, flags=sublime.INHIBIT_WORD_COMPLETIONS)
 
+    def on_hover(self, view, point, hover_zone):
+        """Show rewind confirm phantom when hovering over a prompt gutter dot."""
+        if hover_zone != sublime.HOVER_GUTTER:
+            return
+        if not view.settings().get(CHAT_VIEW_FLAG, False):
+            return
+        window = view.window()
+        if not window or window.id() not in chatview_clients:
+            return
+        session = chatview_clients[window.id()]
+
+        row, _ = view.rowcol(point)
+        for i, (region, uuid) in enumerate(session.prompt_regions):
+            region_row, _ = view.rowcol(region.begin())
+            if region_row == row:
+                if not uuid:
+                    return
+                if session.rewind_confirm_panel.visible:
+                    return
+                def on_confirm(idx=i):
+                    sublime.status_message(f"Rewinding to prompt {idx + 1}...")
+                    session.rewind_to_prompt(idx)
+                session.rewind_confirm_panel.show(region, i, on_confirm)
+                return
+
     def on_modified_async(self, view):
         """
         Trigger autocompletion immediately when '@' is typed.
@@ -1958,6 +2138,40 @@ class ChatViewListener(sublime_plugin.EventListener):
                 "api_completions_only": True,
                 "next_completion_if_showing": False
             })
+
+
+class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
+    """
+    Erase everything from cut_point to end of the view, then set up a
+    fresh prompt area. The user text is read from the view before erasing.
+    """
+    def run(self, edit, cut_point):
+        # Capture whatever the user has typed in the current (post-submit) input
+        # area so we can restore it after truncation.  CHAT_INPUT_START points at
+        # the "\n\n\n" separator; the editable region starts after PROMPT_PREFIX.
+        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
+        editable_start = input_start + len(PROMPT_PREFIX)
+        user_text = self.view.substr(sublime.Region(editable_start, self.view.size())).strip()
+
+        if cut_point < self.view.size():
+            self.view.erase(edit, sublime.Region(cut_point, self.view.size()))
+
+        self.view.insert(edit, self.view.size(), "\n\n\n")
+        self.view.settings().set(CHAT_INPUT_START, self.view.size())
+
+        window = self.view.window()
+        if window and window.id() in chatview_clients:
+            chatview_clients[window.id()].model_phantom.update(
+                plan_mode=chatview_clients[window.id()].plan_mode
+            )
+
+        self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
+        if user_text:
+            self.view.insert(edit, self.view.size(), user_text)
+        end = self.view.size()
+        self.view.sel().clear()
+        self.view.sel().add(sublime.Region(end))
+        self.view.show(end)
 
 
 class TermChatOutputAppendCommand(sublime_plugin.TextCommand):
@@ -2510,4 +2724,3 @@ class TermChatImplementPlanCommand(sublime_plugin.WindowCommand):
             
             # Force the UI out of plan mode so subsequent turns don't trigger planning.
             self.window.run_command("term_chat_toggle_plan_mode", {"mode": "fast"})
-

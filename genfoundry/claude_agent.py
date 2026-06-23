@@ -9,9 +9,14 @@ Reference: https://github.com/anthropics/claude-agent-sdk-python
 import asyncio
 import json
 import os
+import re
 import shutil
 import sys
 import logging
+import unicodedata
+import uuid as _uuid_mod
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any, AsyncIterator, List, Callable, Union
 from enum import Enum
 
@@ -140,6 +145,9 @@ class ClaudeCodeAgent(BaseAgent):
         env = os.environ.copy()
         env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-py"
 
+        if self.options.enable_file_checkpointing:
+            env["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "true"
+
         # Inject user-defined extra environment variables (including ANTHROPIC_API_KEY etc.)
         if self.options.extra_env:
             env.update(self.options.extra_env)
@@ -242,6 +250,49 @@ class ClaudeCodeAgent(BaseAgent):
         }
         await self._send_control_request(request)
 
+    async def rewind_files(self, user_message_id: str) -> None:
+        """Restore all files modified after the given user message back to their
+        pre-message state.  Requires enable_file_checkpointing=True on connect."""
+        if not self.is_connected:
+            raise RuntimeError("Client is not connected. Call connect() first.")
+
+        await self._send_control_request({
+            "subtype": "rewind_files",
+            "user_message_id": user_message_id,
+        })
+
+    async def rewind(self, user_message_id: str) -> str:
+        """Rewind to the given user message: restore files then fork the session.
+
+        Performs the full "both" rewind sequence:
+          1. rewind_files — restores on-disk files via the live agent subprocess
+          2. fork_session_for_rewind — creates a truncated JSONL fork with fresh UUIDs
+
+        Returns the new session ID to resume from.
+
+        Requires enable_file_checkpointing=True in AgentOptions.
+        """
+        if self.is_connected:
+            await self.rewind_files(user_message_id)
+
+        # Use the session id we were told to resume (options), falling back to
+        # what the CLI echoed in the init message.  After a first rewind the CLI
+        # may echo the root session id instead of the fork id, so options.session_id
+        # is the reliable pointer to the JSONL file on disk.
+        source_session_id = self.options.session_id or self._session_id
+        if not source_session_id:
+            raise RuntimeError("No session ID available for rewind fork")
+
+        loop = asyncio.get_event_loop()
+        new_session_id = await loop.run_in_executor(
+            None,
+            fork_session_for_rewind,
+            source_session_id,
+            user_message_id,
+            self.options.cwd,
+        )
+        return new_session_id
+
     async def interrupt(self) -> None:
         """
         Interrupt the current conversation or turn.
@@ -267,7 +318,7 @@ class ClaudeCodeAgent(BaseAgent):
         }
 
         await self._write_json(control_request)
-        LOG.debug(f"Sent control_request {request.get('subtype')}: {request_id}")
+        LOG.info(f"[ctrl] sent {request.get('subtype')} request_id={request_id} data={request}")
 
     async def _write_json(self, data: Dict[str, Any]) -> None:
         """Write a JSON message to the subprocess stdin"""
@@ -500,7 +551,21 @@ class ClaudeCodeAgent(BaseAgent):
 
         # Handle control_response message
         if msg_type == "control_response":
+            response = data.get("response", {})
+            subtype = response.get("subtype")
+            request_id = response.get("request_id")
+            if subtype == "error":
+                LOG.error(f"[ctrl] control_response ERROR request_id={request_id} error={response.get('error')!r}")
+            else:
+                LOG.info(f"[ctrl] control_response {subtype} request_id={request_id}")
             return Message(msg_type, content=data, msg_id=msg_id)
+
+        # Handle user echo messages (from --replay-user-messages) — expose uuid
+        if msg_type == "user":
+            inner = data.get("message", {})
+            user_uuid = data.get("uuid") or inner.get("uuid")
+            kwargs = {"uuid": user_uuid} if user_uuid else {}
+            return Message(msg_type, content=data, msg_id=user_uuid, **kwargs)
 
         # Handle other message types
         content = data.get("content") or data.get("message")
@@ -617,6 +682,265 @@ async def query(
     finally:
         await client.disconnect()
 
+
+
+# session file helpers
+# refer to session_mutations in agent sdk
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9]")
+_MAX_SANITIZED_LENGTH = 200
+_TRANSCRIPT_TYPES = frozenset({"user", "assistant", "attachment", "system", "progress"})
+
+
+def _validate_session_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value))
+
+
+def _simple_hash(s: str) -> str:
+    """32-bit hash to base36, matching the CLI's directory naming (TS simpleHash)."""
+    h = 0
+    for ch in s:
+        h = (h << 5) - h + ord(ch)
+        h = h & 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+    h = abs(h)
+    if h == 0:
+        return "0"
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = []
+    n = h
+    while n > 0:
+        out.append(digits[n % 36])
+        n //= 36
+    return "".join(reversed(out))
+
+
+def _sanitize_path(name: str) -> str:
+    sanitized = _SANITIZE_RE.sub("-", name)
+    if len(sanitized) <= _MAX_SANITIZED_LENGTH:
+        return sanitized
+    h = _simple_hash(name)
+    return f"{sanitized[:_MAX_SANITIZED_LENGTH]}-{h}"
+
+
+def _get_projects_dir() -> Path:
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(unicodedata.normalize("NFC", config_dir)) / "projects"
+    return Path(unicodedata.normalize("NFC", str(Path.home() / ".claude"))) / "projects"
+
+
+def _canonicalize_path(d: str) -> str:
+    try:
+        resolved = os.path.realpath(d)
+        return unicodedata.normalize("NFC", resolved)
+    except OSError:
+        return unicodedata.normalize("NFC", d)
+
+
+def _find_project_dir(project_path: str) -> Optional[Path]:
+    projects_dir = _get_projects_dir()
+    exact = projects_dir / _sanitize_path(project_path)
+    if exact.is_dir():
+        return exact
+    # Long-path fallback: hash suffix may differ between Bun and Python
+    sanitized = _sanitize_path(project_path)
+    if len(sanitized) <= _MAX_SANITIZED_LENGTH:
+        return None
+    prefix = sanitized[:_MAX_SANITIZED_LENGTH]
+    try:
+        for entry in projects_dir.iterdir():
+            if entry.is_dir() and entry.name.startswith(prefix + "-"):
+                return entry
+    except OSError:
+        pass
+    return None
+
+
+def _find_session_file_with_dir(
+    session_id: str,
+    cwd: Optional[str] = None,
+) -> Optional[tuple]:
+    """Return (file_path, project_dir) or None."""
+    file_name = f"{session_id}.jsonl"
+
+    def _try(project_dir: Path):
+        p = project_dir / file_name
+        try:
+            if p.stat().st_size > 0:
+                return (p, project_dir)
+        except OSError:
+            pass
+        return None
+
+    if cwd:
+        canonical = _canonicalize_path(cwd)
+        project_dir = _find_project_dir(canonical)
+        if project_dir is not None:
+            result = _try(project_dir)
+            if result:
+                return result
+        return None
+
+    projects_dir = _get_projects_dir()
+    try:
+        for entry in projects_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            result = _try(entry)
+            if result:
+                return result
+    except OSError:
+        pass
+    return None
+
+
+def _parse_fork_transcript(content: bytes, session_id: str):
+    """Parse JSONL bytes into (transcript_entries, content_replacements)."""
+    transcript = []
+    content_replacements = []
+    for line in content.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        entry_type = entry.get("type")
+        if entry_type in _TRANSCRIPT_TYPES and isinstance(entry.get("uuid"), str):
+            transcript.append(entry)
+        elif (
+            entry_type == "content-replacement"
+            and entry.get("sessionId") == session_id
+            and isinstance(entry.get("replacements"), list)
+        ):
+            content_replacements.extend(entry["replacements"])
+    return transcript, content_replacements
+
+
+def _build_fork_lines(
+    transcript: list,
+    content_replacements: list,
+    session_id: str,
+    up_to_message_id: Optional[str],
+) -> tuple:
+    """Produce (forked_session_id, jsonl_lines) for a transcript fork.
+
+    Strips sidechains, drops progress entries, updates sessionId, stamps
+    forkedFrom.  UUIDs are kept as-is so that file checkpoints (keyed by
+    the original user-message UUID) remain reachable on subsequent rewinds.
+    """
+    transcript = [e for e in transcript if not e.get("isSidechain")]
+
+    if not transcript:
+        raise ValueError(f"Session {session_id} has no messages to fork")
+
+    if up_to_message_id:
+        cutoff = -1
+        for i, entry in enumerate(transcript):
+            if entry.get("uuid") == up_to_message_id:
+                cutoff = i
+                break
+        if cutoff == -1:
+            raise ValueError(
+                f"Message {up_to_message_id} not found in session {session_id}"
+            )
+        transcript = transcript[: cutoff + 1]
+
+    # Only write non-progress entries
+    writable = [e for e in transcript if e.get("type") != "progress"]
+    if not writable:
+        raise ValueError(f"Session {session_id} has no messages to fork")
+
+    forked_session_id = str(_uuid_mod.uuid4())
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    lines = []
+
+    for i, original in enumerate(writable):
+        timestamp = now if i == len(writable) - 1 else original.get("timestamp", now)
+
+        forked = {
+            **original,
+            "sessionId": forked_session_id,
+            "timestamp": timestamp,
+            "isSidechain": False,
+            "forkedFrom": {"sessionId": session_id, "messageUuid": original["uuid"]},
+        }
+        for key in ("teamName", "agentName", "slug", "sourceToolAssistantUUID"):
+            forked.pop(key, None)
+
+        lines.append(json.dumps(forked, separators=(",", ":")))
+
+    if content_replacements:
+        lines.append(json.dumps({
+            "type": "content-replacement",
+            "sessionId": forked_session_id,
+            "replacements": content_replacements,
+            "uuid": str(_uuid_mod.uuid4()),
+            "timestamp": now,
+        }, separators=(",", ":")))
+
+    lines.append(json.dumps({
+        "type": "custom-title",
+        "sessionId": forked_session_id,
+        "customTitle": "Rewind fork",
+        "uuid": str(_uuid_mod.uuid4()),
+        "timestamp": now,
+    }, separators=(",", ":")))
+
+    return forked_session_id, lines
+
+
+def fork_session_for_rewind(
+    session_id: str,
+    up_to_message_uuid: str,
+    cwd: Optional[str] = None,
+) -> str:
+    """Fork a Claude session up to (inclusive) the given user message UUID.
+
+    Remaps all message UUIDs and preserves the parentUuid chain, matching
+    the behaviour of claude-agent-sdk-python fork_session(). Returns the
+    new session ID.
+
+    Raises:
+        FileNotFoundError: If the session file cannot be found.
+        ValueError: If up_to_message_uuid is not found in the transcript.
+    """
+    if not _validate_session_uuid(session_id):
+        raise ValueError(f"Invalid session_id: {session_id}")
+    if not _validate_session_uuid(up_to_message_uuid):
+        raise ValueError(f"Invalid up_to_message_uuid: {up_to_message_uuid}")
+
+    source = _find_session_file_with_dir(session_id, cwd)
+    if source is None:
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    file_path, project_dir = source
+    content = file_path.read_bytes()
+    if not content:
+        raise ValueError(f"Session {session_id} has no messages to fork")
+
+    transcript, content_replacements = _parse_fork_transcript(content, session_id)
+    forked_session_id, lines = _build_fork_lines(
+        transcript, content_replacements, session_id, up_to_message_uuid
+    )
+
+    fork_path = project_dir / f"{forked_session_id}.jsonl"
+    fd = os.open(fork_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, ("\n".join(lines) + "\n").encode("utf-8"))
+    finally:
+        os.close(fd)
+
+    LOG.info(f"[rewind] forked {session_id} -> {forked_session_id} ({len(lines)} entries)")
+    return forked_session_id
 
 
 if __name__ == "__main__":

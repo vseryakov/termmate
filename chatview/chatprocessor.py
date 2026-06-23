@@ -118,9 +118,18 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 self.session.show_permission_phantom(request_id, tool_name, input_data)
 
         elif message.type == "user":
-            if (isinstance(message.content["content"], str) and
-                message.content["content"].startswith("<local-command-stdout>")):
-                local_output = xml.etree.ElementTree.fromstring(message.content["content"])
+            inner = message.content if isinstance(message.content, dict) else {}
+            # Only update the rewind UUID for actual user prompts, not tool_result echo messages.
+            # Tool results have a list content (array of tool_use_result blocks); user prompts
+            # have a string or a dict with role/content keys.
+            msg_content = inner.get("message", {}).get("content") if isinstance(inner.get("message"), dict) else inner.get("content")
+            is_tool_result = isinstance(msg_content, list)
+            user_uuid = message.id  # set from data.get("uuid") in _parse_message
+            if user_uuid and not is_tool_result:
+                self.session.update_last_prompt_uuid(user_uuid)
+            user_content = inner.get("content") or inner.get("message", {}).get("content", "")
+            if isinstance(user_content, str) and user_content.startswith("<local-command-stdout>"):
+                local_output = xml.etree.ElementTree.fromstring(user_content)
                 self.append_content(local_output.text)
 
         elif message.type == "error":
