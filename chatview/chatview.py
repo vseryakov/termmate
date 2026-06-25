@@ -2096,8 +2096,9 @@ class ChatViewListener(sublime_plugin.EventListener):
 
         row, _ = view.rowcol(point)
         for i, (region, uuid) in enumerate(session.prompt_regions):
-            region_row, _ = view.rowcol(region.begin())
-            if region_row == row:
+            start_row, _ = view.rowcol(region.begin())
+            end_row, _ = view.rowcol(region.end())
+            if start_row <= row <= end_row:
                 if not uuid:
                     return
                 if session.rewind_confirm_panel.visible:
