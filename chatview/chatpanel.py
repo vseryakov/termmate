@@ -65,10 +65,10 @@ class RewindConfirmPanel:
                 }}
             </style>
             <div class="dialog">
-                <div class="title">↩ Rewind conversation</div>
-                <div class="subtitle">Store files and conversaction to this point, later message will be discarded.</div>
+                <div class="title">↩ Restore conversation</div>
+                <div class="subtitle">Restore files and conversaction to this point, later message will be discarded.</div>
                 <div class="actions">
-                    <a href="confirm" class="btn btn-confirm">Rewind</a>
+                    <a href="confirm" class="btn btn-confirm">Restore</a>
                     <a href="cancel" class="btn btn-cancel">Cancel</a>
                 </div>
             </div>
