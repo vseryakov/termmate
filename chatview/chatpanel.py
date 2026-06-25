@@ -27,6 +27,9 @@ class RewindConfirmPanel:
                 .dialog {{
                     padding: 16px 18px 14px 18px;
                     min-width: 260px;
+                    background-color: color(var(--background) blend(var(--foreground) 88%));
+                    border: 1px solid color(var(--foreground) alpha(0.15));
+                    border-radius: 5px;
                 }}
                 .title {{
                     color: var(--orangish);
