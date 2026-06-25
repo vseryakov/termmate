@@ -1339,30 +1339,31 @@ class ChatSession:
 
     def add_prompt_highlight(self, region):
         """Add a gutter highlight and an end-of-line rewind button for a submitted prompt."""
-        index = len(self.prompt_regions)
-        self.prompt_regions.append((region, None))
-        phantom_set = sublime.PhantomSet(self.chat_view, f"chatview_rewind_btn_{index}")
+        region_index = len(self.prompt_regions)
+        phantom_index = len(self.prompt_button_phantoms)
+        self.prompt_regions.append((region, None, phantom_index))
+        phantom_set = sublime.PhantomSet(self.chat_view, f"chatview_rewind_btn_{region_index}")
         self.prompt_button_phantoms.append(phantom_set)
         self._redraw_prompt_highlights()
         # Button starts greyed out — uuid not yet available
-        self._draw_prompt_button(index, active=False)
+        self._draw_prompt_button(region_index, active=False)
 
     def update_last_prompt_uuid(self, uuid):
         """Attach the echoed user message UUID to the most recent prompt region."""
         if not self.prompt_regions:
             return
-        index = len(self.prompt_regions) - 1
-        region, _ = self.prompt_regions[index]
-        self.prompt_regions[index] = (region, uuid)
+        region_index = len(self.prompt_regions) - 1
+        region, _, phantom_index = self.prompt_regions[region_index]
+        self.prompt_regions[region_index] = (region, uuid, phantom_index)
         # Activate the button now that we have a uuid
-        self._draw_prompt_button(index, active=True)
+        self._draw_prompt_button(region_index, active=True)
 
-    def _draw_prompt_button(self, index, active):
-        """Draw (or redraw) the end-of-line rewind button phantom for prompt at index."""
-        if index >= len(self.prompt_regions) or index >= len(self.prompt_button_phantoms):
+    def _draw_prompt_button(self, region_index, active):
+        """Draw (or redraw) the end-of-line rewind button phantom for prompt at region_index."""
+        region, _uuid, phantom_index = self.prompt_regions[region_index]
+        if phantom_index >= len(self.prompt_button_phantoms):
             return
-        region, _uuid = self.prompt_regions[index]
-        phantom_set = self.prompt_button_phantoms[index]
+        phantom_set = self.prompt_button_phantoms[phantom_index]
 
         # Anchor at the end of the last line of the user's text.
         # region.end() may point past the user's text if the view grew after
@@ -1378,13 +1379,13 @@ class ChatSession:
                 "font-size:0.85em;opacity:0.7;padding:2px 10px;display:inline-block;'>↩</a>"
                 "</body>"
             )
-            def on_navigate(href, idx=index):
+            def on_navigate(href, idx=region_index):
                 if href != "rewind":
                     return
                 if self.rewind_confirm_panel.visible:
                     self.rewind_confirm_panel.clear()
                     return
-                r, _ = self.prompt_regions[idx]
+                r, *_ = self.prompt_regions[idx]
                 def on_confirm(i=idx):
                     sublime.status_message(f"Rewinding to prompt {i + 1}...")
                     self.rewind_to_prompt(i)
@@ -1412,20 +1413,26 @@ class ChatSession:
             PROMPT_HIGHLIGHT_FLAGS
         )
 
+    def clear_prompt_buttons(self):
+        """Remove all rewind button phantoms; keep gutter dots but disable rewind."""
+        for phantom_set in self.prompt_button_phantoms:
+            phantom_set.update([])
+        # Null UUIDs so gutter clicks are blocked
+        self.prompt_regions = [(r, None, pi) for r, _, pi in self.prompt_regions]
+        self.prompt_button_phantoms = []
+
     def clear_prompt_highlights(self):
         """Clear all prompt gutter highlights and inline buttons."""
         self.prompt_regions = []
         self.chat_view.erase_regions(PROMPT_HIGHLIGHT_KEY)
-        for phantom_set in self.prompt_button_phantoms:
-            phantom_set.update([])
-        self.prompt_button_phantoms = []
+        self.clear_prompt_buttons()
 
     def rewind_to_prompt(self, prompt_index):
         """Fork the current session up to prompt_index and restart the agent on the fork."""
         if prompt_index < 0 or prompt_index >= len(self.prompt_regions):
             return
 
-        _region, user_message_uuid = self.prompt_regions[prompt_index]
+        _region, user_message_uuid, *_ = self.prompt_regions[prompt_index]
         session_id = self.agent_thread.session_id if self.agent_thread else None
 
         if not session_id:
@@ -1450,14 +1457,14 @@ class ChatSession:
 
     def _on_rewind_complete(self, new_session_id, prompt_index):
         """Called on main thread after fork completes; restarts agent on forked session."""
-        region, _uuid = self.prompt_regions[prompt_index]
+        region, _uuid, phantom_index = self.prompt_regions[prompt_index]
         cut_point = region.begin() - len(PROMPT_PREFIX)
 
         # Clear button phantoms for trimmed prompts
-        for phantom_set in self.prompt_button_phantoms[prompt_index:]:
+        for phantom_set in self.prompt_button_phantoms[phantom_index:]:
             phantom_set.update([])
         self.prompt_regions = self.prompt_regions[:prompt_index]
-        self.prompt_button_phantoms = self.prompt_button_phantoms[:prompt_index]
+        self.prompt_button_phantoms = self.prompt_button_phantoms[:phantom_index]
         self._redraw_prompt_highlights()
 
         self.session_allow_all = False
@@ -1507,6 +1514,7 @@ class ChatSession:
         # Clear stale models and session_id from previous agent
         self.available_models = []
         self.chat_view.settings().set(CHAT_SESSION_ID, None)
+        self.clear_prompt_buttons()
 
         if self.agent_thread:
             self.agent_thread.stop()
@@ -2095,7 +2103,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         session = chatview_clients[window.id()]
 
         row, _ = view.rowcol(point)
-        for i, (region, uuid) in enumerate(session.prompt_regions):
+        for i, (region, uuid, _) in enumerate(session.prompt_regions):
             start_row, _ = view.rowcol(region.begin())
             end_row, _ = view.rowcol(region.end())
             if start_row <= row <= end_row:
