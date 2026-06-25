@@ -314,6 +314,9 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
         elif message.type == "turn_started":
             # Extract turnId if available
             self._active_turn_id = message.content.get("turnId")
+            turn_index = message.content.get("turnIndex")
+            if turn_index is not None:
+                self.session.update_last_prompt_uuid(str(turn_index))
             self.session.start_loading()
 
         elif message.type in ("thinking", "text"):

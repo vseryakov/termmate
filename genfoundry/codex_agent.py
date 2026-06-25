@@ -93,6 +93,8 @@ class CodexAgent(BaseAgent):
         self.plan_mode: bool = self.options.plan_mode
         # Accumulates item/plan/delta content in plan mode
         self._plan_text: str = ""
+        # Counts user turns sent (1-based); used as rewind handle
+        self._turn_count: int = 0
 
         if not self.cli_path:
             raise FileNotFoundError(
@@ -228,12 +230,18 @@ class CodexAgent(BaseAgent):
         if result and isinstance(result, dict):
             thread = result.get("thread", {})
             self.thread_id = thread.get("id")
-            
+
             # Capture the default model assigned by the server
             if "model" in result and not self.options.model:
                 self.options.model = result.get("model")
-                
-            LOG.info(f"Codex connect {method}: {self.thread_id}")
+
+            # Sync turn count from resumed thread so rewind math stays correct
+            turns = thread.get("turns", [])
+            if turns:
+                self._turn_count = len(turns)
+                LOG.info(f"Codex connect {method}: {self.thread_id} (resumed {self._turn_count} turns)")
+            else:
+                LOG.info(f"Codex connect {method}: {self.thread_id}")
 
         if prompt:
             await self.send_message(prompt)
@@ -317,6 +325,33 @@ class CodexAgent(BaseAgent):
             })
         else:
             LOG.warning(f"CodexAgent: Cannot interrupt - is_connected: {self._is_connected}, thread_id: {self.thread_id}, active_turn_id: {self._active_turn_id}")
+
+    async def rewind(self, turn_identifier: str) -> Optional[str]:
+        """Roll back the thread to just before the turn at turn_identifier (1-based index).
+
+        Drops the target turn and everything after it.
+        numTurns = _turn_count - (target_index - 1) = turns from target to end (inclusive).
+        Returns the thread_id (unchanged).
+        """
+        if not self._is_connected or not self.thread_id:
+            raise RuntimeError("Client is not connected or no active thread.")
+
+        target_index = int(turn_identifier)
+        num_turns = self._turn_count - (target_index - 1)
+        if num_turns < 1:
+            return self.thread_id
+
+        LOG.info(f"[rewind] thread/rollback numTurns={num_turns} (turn_count={self._turn_count}, target={target_index})")
+        result = await self._rpc_request("thread/rollback", {
+            "threadId": self.thread_id,
+            "numTurns": num_turns,
+        })
+        if result is None:
+            raise RuntimeError("thread/rollback RPC failed or timed out")
+
+        self._turn_count = target_index - 1
+        self._active_turn_id = None
+        return self.thread_id
 
     async def _respond_to_server_request(self, request_id: Any, result: Dict[str, Any]) -> None:
         """Send a JSON-RPC response to a server-initiated request."""
@@ -456,8 +491,9 @@ class CodexAgent(BaseAgent):
         elif method == "turn/started":
             turn_id = self._extract_turn_id(params)
             self._active_turn_id = turn_id
+            self._turn_count += 1
             await self._message_queue.put(
-                Message("turn_started", content={"turnId": turn_id})
+                Message("turn_started", content={"turnId": turn_id, "turnIndex": self._turn_count})
             )
 
         elif method == "turn/completed":
