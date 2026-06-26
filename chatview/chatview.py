@@ -285,7 +285,10 @@ class AgentThread(threading.Thread):
             session_id=self.anthropic_config.get("session_id"),
             extra_env=self.anthropic_config.get("env"),
             debug_agent_message=self.anthropic_config.get("debug_agent_message", False),
-            enable_file_checkpointing=self.anthropic_config.get("agent_provider", "claude") == "claude",
+            enable_file_checkpoint=(
+                self.anthropic_config.get("agent_provider", "claude") == "claude"
+                and self.anthropic_config.get("enable_file_checkpoint", True)
+            ),
         )
 
         agent_provider = self.anthropic_config.get("agent_provider", "claude")

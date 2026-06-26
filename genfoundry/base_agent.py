@@ -92,7 +92,7 @@ class AgentOptions:
         extra_env: Optional[Dict[str, str]] = None,
         add_dirs: Optional[List[str]] = None,
         debug_agent_message: bool = False,
-        enable_file_checkpointing: bool = False,
+        enable_file_checkpoint: bool = False,
     ):
         import os
         self.cwd = cwd or os.getcwd()
@@ -111,7 +111,7 @@ class AgentOptions:
         self.extra_env = extra_env or {}
         self.add_dirs = add_dirs or []
         self.debug_agent_message = debug_agent_message
-        self.enable_file_checkpointing = enable_file_checkpointing
+        self.enable_file_checkpoint = enable_file_checkpoint
 
 
 class BaseAgent(abc.ABC):

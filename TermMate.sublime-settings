@@ -33,5 +33,11 @@
     //   "ANTHROPIC_API_KEY": "sk-ant-...",
     //   "CODEX_API_KEY": "sk-..."
     // }
-    "env": {}
+    "env": {},
+
+    // Enable file-based conversation checkpoint.
+    // When true, the agent saves a checkpoint before each message so the
+    // Rewind feature can restore prior states.  Only supported by the Claude
+    // agent; has no effect when using Codex or Pi.
+    "enable_file_checkpoint": true
 }

@@ -145,7 +145,7 @@ class ClaudeCodeAgent(BaseAgent):
         env = os.environ.copy()
         env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-py"
 
-        if self.options.enable_file_checkpointing:
+        if self.options.enable_file_checkpoint:
             env["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "true"
 
         # Inject user-defined extra environment variables (including ANTHROPIC_API_KEY etc.)
@@ -252,7 +252,7 @@ class ClaudeCodeAgent(BaseAgent):
 
     async def rewind_files(self, user_message_id: str) -> None:
         """Restore all files modified after the given user message back to their
-        pre-message state.  Requires enable_file_checkpointing=True on connect."""
+        pre-message state.  Requires enable_file_checkpoint=True on connect."""
         if not self.is_connected:
             raise RuntimeError("Client is not connected. Call connect() first.")
 
@@ -270,7 +270,7 @@ class ClaudeCodeAgent(BaseAgent):
 
         Returns the new session ID to resume from.
 
-        Requires enable_file_checkpointing=True in AgentOptions.
+        Requires enable_file_checkpoint=True in AgentOptions.
         """
         if self.is_connected:
             await self.rewind_files(user_message_id)
