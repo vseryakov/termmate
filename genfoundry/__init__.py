@@ -10,7 +10,7 @@ from .base_agent import (
     ToolPermissionContext,
 )
 from .claude_agent import ClaudeCodeAgent, query as claude_query, list_sessions_for_cwd
-from .codex_agent import CodexAgent, query as codex_query
+from .codex_agent import CodexAgent, query as codex_query, list_codex_sessions
 from .pi_agent import PiAgent, query as pi_query
 
 __all__ = [
@@ -28,6 +28,7 @@ __all__ = [
     "list_sessions_for_cwd",
     "CodexAgent",
     "codex_query",
+    "list_codex_sessions",
     "PiAgent",
     "pi_query",
 ]

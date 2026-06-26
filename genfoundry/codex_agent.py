@@ -948,12 +948,15 @@ class CodexAgent(BaseAgent):
 
         # Terminate process
         if self._process and self._process.returncode is None:
+            if self._process.stdin:
+                self._process.stdin.close()
             self._process.terminate()
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=3.0)
             except asyncio.TimeoutError:
                 self._process.kill()
                 await self._process.wait()
+        self._process = None
 
 
 async def query(
@@ -977,6 +980,131 @@ async def query(
                 break
     finally:
         await client.disconnect()
+
+
+async def _list_codex_sessions_rpc(cli_path: str, cwd: Optional[str]) -> list:
+    """Spawn a temporary codex app-server, call thread/list, return parsed threads."""
+    import asyncio as _asyncio
+
+    kwargs: Dict[str, Any] = {}
+    if sys.platform == "win32":
+        import subprocess as _subprocess
+        kwargs["creationflags"] = _subprocess.CREATE_NO_WINDOW
+
+    proc = await _asyncio.create_subprocess_exec(
+        cli_path, "app-server",
+        stdin=_asyncio.subprocess.PIPE,
+        stdout=_asyncio.subprocess.PIPE,
+        stderr=_asyncio.subprocess.DEVNULL,
+        **kwargs,
+    )
+
+    rpc_id = 0
+    pending: Dict[int, _asyncio.Future] = {}
+    loop = _asyncio.get_event_loop()
+
+    async def write_json(data: dict) -> None:
+        if proc.stdin:
+            proc.stdin.write((json.dumps(data) + "\n").encode())
+            await proc.stdin.drain()
+
+    async def rpc(method: str, params: dict, timeout: float = 10.0) -> Any:
+        nonlocal rpc_id
+        rpc_id += 1
+        rid = rpc_id
+        fut: _asyncio.Future = loop.create_future()
+        pending[rid] = fut
+        await write_json({"id": rid, "method": method, "params": params})
+        try:
+            return await _asyncio.wait_for(fut, timeout=timeout)
+        except _asyncio.TimeoutError:
+            pending.pop(rid, None)
+            return None
+
+    async def read_loop() -> None:
+        buf = b""
+        while proc.stdout:
+            chunk = await proc.stdout.read(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                try:
+                    msg = json.loads(line.decode("utf-8", errors="replace").strip())
+                    msg_id = msg.get("id")
+                    if msg_id is not None and msg_id in pending:
+                        fut = pending.pop(msg_id)
+                        if not fut.done():
+                            fut.set_result(msg.get("result"))
+                except Exception:
+                    pass
+
+    read_task = _asyncio.create_task(read_loop())
+
+    try:
+        await rpc("initialize", {
+            "clientInfo": {"name": "codyform", "title": "Codyform", "version": "1.0"},
+            "capabilities": {"experimentalApi": True},
+        })
+        await write_json({"method": "initialized"})
+
+        list_params: Dict[str, Any] = {
+            "sortKey": "updated_at",
+            "sortDirection": "desc",
+            "archived": False,
+            "useStateDbOnly": True,
+        }
+        if cwd:
+            list_params["cwd"] = cwd
+
+        result = await rpc("thread/list", list_params)
+
+        threads = []
+        if result and isinstance(result, dict):
+            for t in result.get("data", []):
+                tid = t.get("id", "")
+                summary = t.get("name") or t.get("preview") or tid[:8]
+                updated_at = float(t.get("updatedAt") or 0)
+                if not t.get("ephemeral") and tid:
+                    threads.append({
+                        "session_id": tid,
+                        "summary": summary,
+                        "updated_at": updated_at,
+                    })
+        return threads
+
+    finally:
+        read_task.cancel()
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            await _asyncio.wait_for(proc.wait(), timeout=2.0)
+        except Exception:
+            pass
+
+
+def list_codex_sessions(cwd: Optional[str] = None) -> list:
+    """Return thread dicts via codex app-server thread/list RPC, sorted newest-first.
+
+    Each dict: session_id (str), summary (str), updated_at (float, unix seconds).
+    Falls back to empty list if codex CLI is not found or the RPC fails.
+    """
+    cli = find_codex_cli()
+    if cli is None:
+        return []
+
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_list_codex_sessions_rpc(cli, cwd))
+        finally:
+            loop.close()
+    except Exception as e:
+        LOG.warning(f"list_codex_sessions RPC failed: {e}")
+        return []
 
 
 if __name__ == "__main__":

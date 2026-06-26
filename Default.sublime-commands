@@ -36,7 +36,7 @@
         "command": "term_chat_clear_session"
     },
     {
-        "caption": "TermMate: Resume Session\tpast conversations",
+        "caption": "TermMate: Resume Session\tresume previous conversation",
         "command": "term_chat_resume_session"
     },
     {

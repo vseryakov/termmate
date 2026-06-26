@@ -10,7 +10,7 @@ import sublime_plugin
 from . import utils as plugin
 from ..genfoundry import (
     ClaudeCodeAgent, CodexAgent, PiAgent, AgentOptions, AssistantMessage, TextBlock,
-    PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd)
+    PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions)
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
 from ..genfoundry.pi_agent import find_pi_cli
@@ -262,6 +262,12 @@ class AgentThread(threading.Thread):
             self.loop.run_until_complete(self._agent_loop())
         finally:
             if self.loop:
+                # Drain pending callbacks and async generators so subprocess
+                # transports are closed while the loop is still alive, preventing
+                try:
+                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                except Exception:
+                    pass
                 self.loop.close()
 
     async def _agent_loop(self):
@@ -1621,14 +1627,21 @@ class ChatSession:
 
     def _format_resume_banner(self, session_id, cwd):
         import datetime
-        sessions = list_sessions_for_cwd(cwd)
-        info = next((s for s in sessions if s["session_id"] == session_id), None)
+        agent = self.window.settings().get(CHAT_AGENT, "claude")
+        if agent == "codex":
+            sessions = list_codex_sessions(cwd)
+            info = next((s for s in sessions if s["session_id"] == session_id), None)
+            mtime_key = "updated_at"
+        else:
+            sessions = list_sessions_for_cwd(cwd)
+            info = next((s for s in sessions if s["session_id"] == session_id), None)
+            mtime_key = "mtime"
         if not info:
             return f"\n\n[resuming session {session_id[:8]}...]\n\n"
 
         summary = info["summary"] or session_id[:8]
-        dt = datetime.datetime.fromtimestamp(info["mtime"]).strftime("%Y-%m-%d %H:%M")
-        return f"\n\nResuming: {summary} · {dt}\n\n"
+        dt = datetime.datetime.fromtimestamp(info[mtime_key]).strftime("%Y-%m-%d %H:%M")
+        return f"\n\n**Resuming:** {summary} · {dt}\n\n"
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
@@ -2401,30 +2414,43 @@ class TermChatClearSessionCommand(sublime_plugin.WindowCommand):
 
 class TermChatResumeSessionCommand(sublime_plugin.WindowCommand):
     """
-    Shows a quick-panel listing past Claude sessions for the current workspace,
-    allowing the user to resume any of them.  Works whether or not a ChatView
-    is already open: when none exists, opening the selected session creates one.
+    Shows a quick-panel listing past sessions for the current workspace and agent.
+    Works whether or not a ChatView is already open: when none exists, opening
+    the selected session creates one first.
+    Supports both claude and codex agents.
     """
 
     _PREVIEW_LEN = 80
+
+    def _get_cwd(self, session):
+        if session is not None:
+            return get_best_dir(session.chat_view)
+        custom_cwd = self.window.settings().get(CHAT_WORKSPACE)
+        if custom_cwd and os.path.isdir(custom_cwd):
+            return custom_cwd
+        folders = self.window.folders()
+        return folders[0] if folders else ""
+
+    def _get_agent(self, session):
+        if session is not None:
+            return session.window.settings().get(CHAT_AGENT, "claude")
+        return self.window.settings().get(CHAT_AGENT, "claude")
 
     def run(self):
         import datetime
         window_id = self.window.id()
         session = chatview_clients.get(window_id)
+        agent = self._get_agent(session)
+        cwd = self._get_cwd(session)
 
-        # Determine cwd: prefer active session's view, fall back to window folder.
-        if session is not None:
-            cwd = get_best_dir(session.chat_view)
+        if agent == "codex":
+            raw = list_codex_sessions(cwd)
+            sessions = [{"session_id": s["session_id"], "summary": s["summary"],
+                         "mtime": s["updated_at"]} for s in raw]
+            placeholder = "Resume previous Codex session"
         else:
-            custom_cwd = self.window.settings().get(CHAT_WORKSPACE)
-            if custom_cwd and os.path.isdir(custom_cwd):
-                cwd = custom_cwd
-            else:
-                folders = self.window.folders()
-                cwd = folders[0] if folders else ""
-
-        sessions = list_sessions_for_cwd(cwd)
+            sessions = list_sessions_for_cwd(cwd)
+            placeholder = "Resume previous Claude session"
 
         if not sessions:
             sublime.status_message("No past sessions found for this workspace")
@@ -2453,14 +2479,10 @@ class TermChatResumeSessionCommand(sublime_plugin.WindowCommand):
 
             active_session = chatview_clients.get(window_id)
             if active_session is not None:
-                # Chat view already open — hot-swap the session.
                 active_session.chat_view.settings().set(CHAT_SESSION_ID, chosen_id)
                 active_session.has_sent_message = True
                 active_session.reload_agent(session_id_override=chosen_id, quiet=False)
             else:
-                # No chat view yet — open one with the chosen session pre-loaded.
-                # term_chat_cli creates the view and ChatSession; we then patch
-                # the session_id and restart the agent before the user types.
                 self.window.run_command("term_chat_cli")
 
                 def _resume_after_open():
@@ -2472,20 +2494,16 @@ class TermChatResumeSessionCommand(sublime_plugin.WindowCommand):
                     new_session.has_sent_message = True
                     new_session.reload_agent(session_id_override=chosen_id, quiet=False)
 
-                # Give term_chat_cli one event-loop tick to register the session.
                 sublime.set_timeout(_resume_after_open, 0)
 
             sublime.status_message(f"Resuming session {chosen_id[:8]}…")
 
-        self.window.show_quick_panel(items, on_select, placeholder="Resume a past Claude session")
+        self.window.show_quick_panel(items, on_select, placeholder=placeholder)
 
     def is_enabled(self):
-        # Available as long as the active agent is claude (or no session yet, so
-        # we default to claude).
         session = chatview_clients.get(self.window.id())
-        if session is None:
-            return True
-        return session.window.settings().get(CHAT_AGENT, "claude") == "claude"
+        agent = self._get_agent(session)
+        return agent in ("claude", "codex")
 
 
 class TermChatInterruptCommand(sublime_plugin.WindowCommand):
