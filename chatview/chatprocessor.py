@@ -198,7 +198,13 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
         elif name == "Bash":
             command = input_data.get("command", "")
             if command:
-                return f"⏺ Bash {command}"
+                lines = command.rstrip().splitlines()
+                if len(lines) > 1:
+                    first_line = lines[0]
+                    indented_rest = "\n".join("    " + line for line in lines[1:])
+                    return f"⏺ Bash {first_line}\n\n{indented_rest}\n"
+                elif len(lines) == 1:
+                    return f"⏺ Bash {lines[0]}"
 
         elif name in ("Write", "Edit"):
             file_path = input_data.get("file_path", "")
@@ -211,8 +217,12 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
 
                 # Render diff for Edit
                 if name == "Edit" and "old_string" in input_data and "new_string" in input_data:
-                    old_lines = input_data["old_string"].splitlines(keepends=True)
-                    new_lines = input_data["new_string"].splitlines(keepends=True)
+                    old_str = input_data["old_string"]
+                    new_str = input_data["new_string"]
+                    if old_str and not old_str.endswith("\n"): old_str += "\n"
+                    if new_str and not new_str.endswith("\n"): new_str += "\n"
+                    old_lines = old_str.splitlines(keepends=True)
+                    new_lines = new_str.splitlines(keepends=True)
 
                     diff_lines = list(difflib.unified_diff(
                         old_lines, new_lines,
