@@ -10,7 +10,7 @@ import sublime_plugin
 from . import utils as plugin
 from ..genfoundry import (
     ClaudeCodeAgent, CodexAgent, PiAgent, AgentOptions, AssistantMessage, TextBlock,
-    PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions)
+    PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions, list_pi_sessions)
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
 from ..genfoundry.pi_agent import find_pi_cli
@@ -1632,6 +1632,10 @@ class ChatSession:
             sessions = list_codex_sessions(cwd)
             info = next((s for s in sessions if s["session_id"] == session_id), None)
             mtime_key = "updated_at"
+        elif agent == "pi":
+            sessions = list_pi_sessions(cwd)
+            info = next((s for s in sessions if s["session_id"] == session_id), None)
+            mtime_key = "mtime"
         else:
             sessions = list_sessions_for_cwd(cwd)
             info = next((s for s in sessions if s["session_id"] == session_id), None)
@@ -2448,6 +2452,9 @@ class TermChatResumeSessionCommand(sublime_plugin.WindowCommand):
             sessions = [{"session_id": s["session_id"], "summary": s["summary"],
                          "mtime": s["updated_at"]} for s in raw]
             placeholder = "Resume previous Codex session"
+        elif agent == "pi":
+            sessions = list_pi_sessions(cwd)
+            placeholder = "Resume previous Pi session"
         else:
             sessions = list_sessions_for_cwd(cwd)
             placeholder = "Resume previous Claude session"
@@ -2503,7 +2510,7 @@ class TermChatResumeSessionCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         session = chatview_clients.get(self.window.id())
         agent = self._get_agent(session)
-        return agent in ("claude", "codex")
+        return agent in ("claude", "codex", "pi")
 
 
 class TermChatInterruptCommand(sublime_plugin.WindowCommand):

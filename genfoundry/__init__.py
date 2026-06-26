@@ -11,7 +11,7 @@ from .base_agent import (
 )
 from .claude_agent import ClaudeCodeAgent, query as claude_query, list_sessions_for_cwd
 from .codex_agent import CodexAgent, query as codex_query, list_codex_sessions
-from .pi_agent import PiAgent, query as pi_query
+from .pi_agent import PiAgent, query as pi_query, list_pi_sessions
 
 __all__ = [
     "BaseAgent",
@@ -31,4 +31,5 @@ __all__ = [
     "list_codex_sessions",
     "PiAgent",
     "pi_query",
+    "list_pi_sessions",
 ]

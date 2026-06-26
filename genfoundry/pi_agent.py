@@ -561,6 +561,105 @@ class PiAgent(BaseAgent):
         await self.disconnect()
 
 
+def list_pi_sessions(cwd: Optional[str] = None) -> list:
+    """Return Pi session dicts for the given cwd, sorted newest-first.
+
+    Each dict: session_id (str), mtime (float), summary (str).
+    cwd=None returns sessions from all projects.
+    """
+    import glob as _glob
+
+    sessions_root = os.path.join(os.path.expanduser("~"), ".pi", "agent", "sessions")
+    if not os.path.isdir(sessions_root):
+        return []
+
+    if cwd:
+        # Match Pi's encoding exactly: strip one leading slash/backslash, then replace
+        # all slashes, backslashes, and colons (Windows drive letters) with dashes.
+        import re as _re
+        sanitized = _re.sub(r"^[/\\]", "", cwd)
+        sanitized = _re.sub(r"[/\\:]", "-", sanitized)
+        dir_name = f"--{sanitized}--"
+        search_dirs = [os.path.join(sessions_root, dir_name)]
+    else:
+        search_dirs = [
+            os.path.join(sessions_root, d)
+            for d in os.listdir(sessions_root)
+            if os.path.isdir(os.path.join(sessions_root, d))
+        ]
+
+    results = []
+    for session_dir in search_dirs:
+        if not os.path.isdir(session_dir):
+            continue
+        for fpath in _glob.glob(os.path.join(session_dir, "*.jsonl")):
+            try:
+                session_id = None
+                first_message = None  # first user message text
+                session_name = None   # user-set name via /session rename (session_info entries)
+                last_activity_ms = None  # last message timestamp in ms
+                mtime = os.path.getmtime(fpath)
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    for raw_line in f:
+                        raw_line = raw_line.strip()
+                        if not raw_line:
+                            continue
+                        try:
+                            entry = json.loads(raw_line)
+                        except json.JSONDecodeError:
+                            continue
+                        etype = entry.get("type")
+                        if etype == "session" and not session_id:
+                            session_id = entry.get("id")
+                        elif etype == "session_info":
+                            # Latest session_info name wins (Pi iterates all and takes last)
+                            name = (entry.get("name") or "").strip()
+                            session_name = name if name else None
+                        elif etype == "message":
+                            msg = entry.get("message", {})
+                            role = msg.get("role")
+                            if role in ("user", "assistant"):
+                                # Track latest activity timestamp (ms epoch in message, or ISO in entry)
+                                ts = msg.get("timestamp")
+                                if isinstance(ts, (int, float)) and ts > 0:
+                                    if last_activity_ms is None or ts > last_activity_ms:
+                                        last_activity_ms = ts
+                                else:
+                                    entry_ts = entry.get("timestamp")
+                                    if isinstance(entry_ts, str):
+                                        try:
+                                            import datetime as _dt
+                                            t = _dt.datetime.fromisoformat(
+                                                entry_ts.replace("Z", "+00:00")
+                                            ).timestamp() * 1000
+                                            if last_activity_ms is None or t > last_activity_ms:
+                                                last_activity_ms = t
+                                        except Exception:
+                                            pass
+                            if first_message is None and role == "user":
+                                for block in msg.get("content", []):
+                                    if isinstance(block, dict) and block.get("type") == "text":
+                                        text = block.get("text", "").strip()
+                                        if text:
+                                            first_message = text
+                                            break
+                if session_id:
+                    if last_activity_ms is not None:
+                        mtime = last_activity_ms / 1000.0
+                    # Pi picker: prefer session_info name, fall back to first user message
+                    summary = session_name or first_message or ""
+                    results.append({
+                        "session_id": session_id,
+                        "mtime": mtime,
+                        "summary": summary,
+                    })
+            except Exception as e:
+                LOG.warning(f"list_pi_sessions: skipping {fpath}: {e}")
+
+    results.sort(key=lambda s: s["mtime"], reverse=True)
+    return results
+
+
 async def query(
     prompt: str,
     options: Optional[AgentOptions] = None
