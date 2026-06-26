@@ -943,6 +943,182 @@ def fork_session_for_rewind(
     return forked_session_id
 
 
+_LITE_BUF = 65536
+_SKIP_PROMPT_RE = re.compile(
+    r"^(?:<local-command-stdout>|<session-start-hook>|<tick>|<goal>|"
+    r"\[Request interrupted by user[^\]]*\]|"
+    r"\s*<ide_opened_file>[\s\S]*</ide_opened_file>\s*$|"
+    r"\s*<ide_selection>[\s\S]*</ide_selection>\s*$)"
+)
+_COMMAND_NAME_RE = re.compile(r"<command-name>(.*?)</command-name>")
+
+
+def _extract_json_str(text: str, key: str) -> Optional[str]:
+    """Extract last occurrence of a JSON string field without full parse."""
+    import json as _json
+    patterns = [f'"{key}":"', f'"{key}": "']
+    last = None
+    for pat in patterns:
+        pos = 0
+        while True:
+            idx = text.find(pat, pos)
+            if idx < 0:
+                break
+            start = idx + len(pat)
+            i = start
+            while i < len(text):
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    raw = text[start:i]
+                    try:
+                        last = _json.loads(f'"{raw}"') if "\\" in raw else raw
+                    except Exception:
+                        last = raw
+                    break
+                i += 1
+            pos = i + 1
+    return last
+
+
+def _extract_first_prompt(head: str) -> str:
+    """Extract first meaningful user prompt from JSONL head chunk."""
+    import json as _json
+    cmd_fallback = ""
+    for line in head.splitlines():
+        if '"type":"user"' not in line and '"type": "user"' not in line:
+            continue
+        if '"tool_result"' in line:
+            continue
+        if '"isMeta":true' in line or '"isMeta": true' in line:
+            continue
+        if '"isCompactSummary":true' in line or '"isCompactSummary": true' in line:
+            continue
+        try:
+            entry = _json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "user":
+            continue
+        msg = entry.get("message", {})
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content", "")
+        texts = []
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            for blk in content:
+                if isinstance(blk, dict) and blk.get("type") == "text" and isinstance(blk.get("text"), str):
+                    texts.append(blk["text"])
+        for raw in texts:
+            result = raw.replace("\n", " ").strip()
+            if not result:
+                continue
+            m = _COMMAND_NAME_RE.search(result)
+            if m:
+                if not cmd_fallback:
+                    cmd_fallback = m.group(1)
+                continue
+            if _SKIP_PROMPT_RE.match(result):
+                continue
+            return result[:200].rstrip() + ("…" if len(result) > 200 else "")
+    return cmd_fallback
+
+
+def _read_session_lite(path: Path) -> Optional[dict]:
+    """Read head+tail of a session file. Returns dict with mtime, head, tail or None."""
+    try:
+        with open(path, "rb") as f:
+            import os as _os
+            st = _os.fstat(f.fileno())
+            size = st.st_size
+            if size == 0:
+                return None
+            mtime = st.st_mtime
+            head_bytes = f.read(_LITE_BUF)
+            head = head_bytes.decode("utf-8", errors="replace")
+            if size <= _LITE_BUF:
+                tail = head
+            else:
+                f.seek(max(0, size - _LITE_BUF))
+                tail = f.read(_LITE_BUF).decode("utf-8", errors="replace")
+            return {"mtime": mtime, "head": head, "tail": tail}
+    except OSError:
+        return None
+
+
+def _parse_session_entry(session_id: str, lite: dict) -> Optional[dict]:
+    """Parse session metadata from head/tail. Returns dict or None for sidechains/empty."""
+    head, tail = lite["head"], lite["tail"]
+    # Filter sidechain sessions (first line check)
+    first_line = head.split("\n", 1)[0]
+    if '"isSidechain":true' in first_line or '"isSidechain": true' in first_line:
+        return None
+    # Summary priority: customTitle > lastPrompt > aiTitle > first_prompt
+    custom_title = (_extract_json_str(tail, "customTitle") or _extract_json_str(head, "customTitle"))
+    ai_title = (_extract_json_str(tail, "aiTitle") or _extract_json_str(head, "aiTitle"))
+    last_prompt = _extract_json_str(tail, "lastPrompt")
+    first_prompt = _extract_first_prompt(head) or None
+    summary = custom_title or last_prompt or ai_title or first_prompt
+    if not summary:
+        return None
+    return {
+        "session_id": session_id,
+        "mtime": lite["mtime"],
+        "summary": summary,
+        "custom_title": custom_title,
+        "first_prompt": first_prompt,
+    }
+
+
+def list_sessions_for_cwd(cwd: Optional[str] = None) -> list:
+    """Return session dicts for the given cwd (or all projects if None), sorted newest-first.
+
+    Each dict: session_id (str), mtime (float), summary (str), custom_title (str|None),
+    first_prompt (str|None).
+    Skips sidechain sessions and metadata-only sessions with no extractable summary.
+    """
+    def _scan_dir(project_dir: Path) -> list:
+        results = []
+        try:
+            for entry in project_dir.iterdir():
+                if not entry.name.endswith(".jsonl"):
+                    continue
+                session_id = entry.name[:-6]
+                if not _validate_session_uuid(session_id):
+                    continue
+                lite = _read_session_lite(entry)
+                if lite is None:
+                    continue
+                info = _parse_session_entry(session_id, lite)
+                if info is not None:
+                    results.append(info)
+        except OSError:
+            pass
+        return results
+
+    results = []
+    if cwd:
+        canonical = _canonicalize_path(cwd)
+        project_dir = _find_project_dir(canonical)
+        if project_dir is None:
+            return []
+        results = _scan_dir(project_dir)
+    else:
+        projects_dir = _get_projects_dir()
+        try:
+            for proj_dir in projects_dir.iterdir():
+                if proj_dir.is_dir():
+                    results.extend(_scan_dir(proj_dir))
+        except OSError:
+            pass
+
+    results.sort(key=lambda x: x["mtime"], reverse=True)
+    return results
+
+
 if __name__ == "__main__":
     # Windows compatibility
     if sys.platform == 'win32':

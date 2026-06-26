@@ -36,6 +36,10 @@
         "command": "term_chat_clear_session"
     },
     {
+        "caption": "TermMate: Resume Session\tpast conversations",
+        "command": "term_chat_resume_session"
+    },
+    {
         "caption": "TermMate: Plan Mode",
         "command": "term_chat_toggle_plan_mode"
     }
