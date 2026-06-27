@@ -1644,11 +1644,16 @@ class ChatSession:
             info = next((s for s in sessions if s["session_id"] == session_id), None)
             mtime_key = "mtime"
         if not info:
-            return f"\n\n[resuming session {session_id[:8]}...]\n\n"
+            return f"\n\n[Resuming session for {agent} {session_id[:8]}]\n\n"
 
-        summary = info["summary"] or session_id[:8]
+        summary = info["summary"] or ""
+        indented_summary = "\n".join(f"    {line}" for line in summary.splitlines())
         dt = datetime.datetime.fromtimestamp(info[mtime_key]).strftime("%Y-%m-%d %H:%M")
-        return f"\n\n**Resuming:** {summary} · {dt}\n\n"
+        return (
+            f"\n\n[Resuming session for {agent}]\n\n"
+            f"■ ResumeConversation ({session_id[:8]} : {dt})\n"
+            f"{indented_summary}\n\n"
+        )
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
