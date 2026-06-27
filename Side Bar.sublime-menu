@@ -1,5 +1,9 @@
 [
     {
+        "caption": "TermMate: Chat with Agent",
+        "command": "term_chat_add_context"
+    },
+    {
         "caption": "TermMate: Set Working Directory",
         "command": "term_chat_set_workspace",
         "args": {"files": [], "dirs": []}

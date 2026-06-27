@@ -1725,6 +1725,10 @@ class TermChatSplitChatCommand(sublime_plugin.WindowCommand):
     Splits the window and moves the chat view to the left-most group.
     """
     def is_visible(self, group=-1, index=-1):
+        try:
+            group, index = int(group), int(index)
+        except (TypeError, ValueError):
+            group, index = -1, -1
         # Called from tab context menu
         if group >= 0 and index >= 0:
             views = self.window.views_in_group(group)
@@ -1739,6 +1743,10 @@ class TermChatSplitChatCommand(sublime_plugin.WindowCommand):
         return False
 
     def run(self, group=-1, index=-1):
+        try:
+            group, index = int(group), int(index)
+        except (TypeError, ValueError):
+            group, index = -1, -1
         # Try to find existing chat view
         chat_view = None
         for view in self.window.views():
