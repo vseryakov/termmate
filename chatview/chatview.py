@@ -15,7 +15,7 @@ from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
 from ..genfoundry.pi_agent import find_pi_cli
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
-from .chatpanel import RewindConfirmPanel
+from .chatpanel import LoadingAnimation, RewindConfirmPanel
 
 def get_available_agents(settings):
     """Returns a list of available agents."""
@@ -162,78 +162,6 @@ def get_best_dir(view):
         if folders:
             return folders[0]
     return ""
-
-
-class LoadingAnimation:
-    """
-    Manages a loading animation phantom with start/stop control.
-    """
-    def __init__(self, view):
-        self.view = view
-        self.phantom_set = sublime.PhantomSet(view, "chatview_loading")
-        self.is_loading = False
-        self.loading_text = None
-        self.frame_index = 0
-        self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-    def start(self, region, text=None):
-        """Start the loading animation at the specified region."""
-        # ALWAYS update the region provider, even if already loading
-        self.region_provider = region
-        self.loading_text = text
-
-        if not self.is_loading:
-            self.is_loading = True
-            self.frame_index = 0
-            self._update_animation()
-
-    def stop(self):
-        """Stop the loading animation and clear the phantom."""
-        self.is_loading = False
-        # Clear on next tick to avoid thread issues if called from background
-        sublime.set_timeout(lambda: self.phantom_set.update([]), 0)
-
-    def _update_animation(self):
-        """Update the loading animation frame."""
-        if not self.is_loading:
-            return
-
-        # Resolve current region
-        if callable(self.region_provider):
-            region = self.region_provider()
-        else:
-            region = self.region_provider
-
-        frame = self.frames[self.frame_index % len(self.frames)]
-
-        text_html = ""
-        if self.loading_text:
-            text_html = f" <span style='font-weight: normal; opacity: 0.8;'>{self.loading_text}</span>"
-
-        html = f"""
-        <body id="chatview-loading" style="background-color: transparent; margin: 0; padding: 0;">
-            <style>
-                .loading {{
-                    color: var(--accent);
-                    background-color: transparent;
-                    font-weight: bold;
-                    margin-right: 8px;
-                    font-family: var(--font-mono);
-                }}
-            </style>
-            <div class="loading">{frame}{text_html}</div>
-        </body>
-        """
-
-        self.phantom_set.update([sublime.Phantom(
-            region,
-            html,
-            sublime.LAYOUT_BLOCK
-        )])
-
-        # Schedule next frame
-        self.frame_index += 1
-        sublime.set_timeout(lambda: self._update_animation(), 100)
 
 
 class AgentThread(threading.Thread):
