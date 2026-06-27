@@ -2187,54 +2187,47 @@ class TermChatInputPromptCommand(sublime_plugin.TextCommand):
         self.view.show(end)
 
 
-class TermChatAddContextCommand(sublime_plugin.TextCommand):
+class TermChatAddContextCommand(sublime_plugin.WindowCommand):
     """
-    Command to add current file context to the ChatView chat prompt.
+    Command to add file context to the ChatView chat prompt.
+    Called from the context menu (current view + selection) or sidebar (files/dirs args).
+    Sidebar callers pass files=[...] with no line numbers; context menu uses active view + selection.
     """
-    def run(self, edit):
-        view = self.view
-        window = view.window()
-        if not window:
-            return
-
-        file_path = view.file_name()
-        if not file_path:
-            return
-
-        # Get line numbers (1-based)
-        sel = view.sel()[0]
-        row_start, _ = view.rowcol(sel.begin())
-        row_end, _ = view.rowcol(sel.end())
-
-        # Format as @file_path#L(A)-(B)
-        # Handle single line selection vs range
-        if row_start == row_end:
-            context_tag = f"@{file_path}#L{row_start + 1}"
+    def run(self, files=[], dirs=[]):
+        paths = files + dirs
+        if paths:
+            # Sidebar: insert @path for each selected file/dir, no line numbers
+            tags = " ".join(f"@{p}" for p in paths)
         else:
-            context_tag = f"@{file_path}#L{row_start + 1}-{row_end + 1}"
+            # Context menu: use active view + selection
+            view = self.window.active_view()
+            if not view:
+                return
+            file_path = view.file_name()
+            if not file_path:
+                return
+            sel = view.sel()[0]
+            row_start, _ = view.rowcol(sel.begin())
+            row_end, _ = view.rowcol(sel.end())
+            if row_start == row_end:
+                tags = f"@{file_path}#L{row_start + 1}"
+            else:
+                tags = f"@{file_path}#L{row_start + 1}-{row_end + 1}"
 
-        # Find or create ChatView chat view
         chat_view = None
-        for v in window.views():
+        for v in self.window.views():
             if v.settings().get(CHAT_VIEW_FLAG, False):
                 chat_view = v
                 break
 
         if not chat_view:
-            # If no chat view, create one and pass the context tag immediately
-            window.run_command("term_chat_cli", {"initial_msg": context_tag})
+            self.window.run_command("term_chat_cli", {"initial_msg": tags})
         else:
-            window.focus_view(chat_view)
-            self._insert_tag(chat_view, context_tag)
-
-    def _insert_tag(self, chat_view, context_tag):
-        # Insert at the end of the view (current prompt area)
-        end_pos = chat_view.size()
-        chat_view.run_command("insert", {"characters": context_tag + " "})
-        # Move cursor to end
-        chat_view.sel().clear()
-        chat_view.sel().add(sublime.Region(chat_view.size()))
-        chat_view.show(chat_view.size())
+            self.window.focus_view(chat_view)
+            chat_view.run_command("insert", {"characters": tags + " "})
+            chat_view.sel().clear()
+            chat_view.sel().add(sublime.Region(chat_view.size()))
+            chat_view.show(chat_view.size())
 
 
 class TermChatPromptHandler(sublime_plugin.TextInputHandler):
