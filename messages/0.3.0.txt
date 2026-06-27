@@ -1,0 +1,16 @@
+TermMate 0.3.0
+==============
+
+- Resume Previous Session
+  Pick up any past conversation right where you left off. Run
+  "TermMate: Resume Session" from the command palette to see a list of
+  previous sessions for the current workspace — each entry shows a short
+  summary and timestamp. Select one and the agent reconnects with full
+  history restored.
+
+- Rewind Conversation
+  Made a wrong turn? Hover over any gutter dot next to a past prompt and
+  click the rewind button (↩) to roll the session back to that point. A
+  confirmation panel lets you review before committing. Once confirmed,
+  all messages after that checkpoint are removed and you can explore a
+  different direction from the same starting point.
