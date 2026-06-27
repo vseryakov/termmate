@@ -557,7 +557,7 @@ class ClaudeCodeAgent(BaseAgent):
             if subtype == "error":
                 LOG.error(f"[ctrl] control_response ERROR request_id={request_id} error={response.get('error')!r}")
             else:
-                LOG.info(f"[ctrl] control_response {subtype} request_id={request_id}")
+                LOG.debug(f"[ctrl] control_response {subtype} request_id={request_id}")
             return Message(msg_type, content=data, msg_id=msg_id)
 
         # Handle user echo messages (from --replay-user-messages) — expose uuid

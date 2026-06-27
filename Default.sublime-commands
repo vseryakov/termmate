@@ -1,10 +1,10 @@
 [
     {
-        "caption": "TermMate: Start Chat",
+        "caption": "TermMate: Start Chat\tnew conversation",
         "command": "term_chat_cli"
     },
     {
-        "caption": "TermMate: Prompt",
+        "caption": "TermMate: Prompt\tinline prompt input",
         "command": "term_chat_prompt"
     },
     {
@@ -28,7 +28,7 @@
         "command": "term_chat_set_model"
     },
     {
-        "caption": "TermMate: Agent",
+        "caption": "TermMate: Agent\tswitch agent provider",
         "command": "term_chat_set_agent"
     },
     {
