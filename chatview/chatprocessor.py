@@ -43,11 +43,9 @@ class BaseChatMessageProcessor:
         raise NotImplementedError
 
     def _render_diff_block(self, diff_text):
-        """Wraps diff text in an indented markdown code block."""
         if not diff_text:
             return ""
-        block_content = f"```diff\n{diff_text.rstrip()}\n```"
-        return "\n".join(" " + line for line in block_content.splitlines())
+        return f"````diff\n{diff_text.rstrip()}\n````"
 
     def _format_tool_block(self, block):
         name = block.get("name")
