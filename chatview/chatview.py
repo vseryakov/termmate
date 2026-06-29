@@ -13,7 +13,7 @@ from ..genfoundry import (
     PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions, list_pi_sessions)
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
-from ..genfoundry.pi_agent import find_pi_cli
+from ..genfoundry.pi_agent import find_pi_cli, get_pi_session_tail
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
 from .chatpanel import LoadingAnimation, RewindConfirmPanel
 
@@ -1552,10 +1552,41 @@ class ChatSession:
 
         if not quiet:
             if old_session_id:
-                msg = self._format_resume_banner(old_session_id, cwd)
+                self._append_resume_banner(old_session_id, cwd)
             else:
-                msg = f"\n\n[reconnecting agent...]\n\n"
-            self.chat_view.run_command("term_chat_output_append", {"text": msg})
+                self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n[reconnecting agent...]\n\n"})
+
+    def _replay_prompt(self, prompt_text):
+        """Append a previously-submitted prompt with gutter highlight, as if the user had just sent it."""
+        text = f"{PROMPT_PREFIX}{prompt_text}\n"
+        pos_before = self.chat_view.settings().get(CHAT_INPUT_START, 0) - 1
+        self.chat_view.run_command("term_chat_output_append", {"text": text})
+        pos_after = self.chat_view.settings().get(CHAT_INPUT_START, 0) - 1
+        region_start = pos_before + len(PROMPT_PREFIX)
+        region_end = pos_after - 1  # exclude trailing \n
+        if region_end > region_start:
+            self.add_prompt_highlight(sublime.Region(region_start, region_end))
+
+    def _append_resume_banner(self, session_id, cwd):
+        """Append resume banner and, for pi, replay the last prompt+response with highlight."""
+        agent = self.window.settings().get(CHAT_AGENT, "claude")
+        if agent == "pi":
+            tail = get_pi_session_tail(session_id, cwd)
+            if tail and (tail.get("prompt") or tail.get("response")):
+                banner = self._format_resume_banner(session_id, cwd)
+                if tail.get("prompt"):
+                    self._replay_prompt(tail["prompt"])
+
+                    self.chat_view.run_command("term_chat_output_append", {"text": "\n"})
+
+                if tail.get("response"):
+                    self.chat_view.run_command("term_chat_output_append", {"text": tail["response"] + "\n"})
+
+                self.chat_view.run_command("term_chat_output_append", {"text": banner})
+                return
+
+        msg = self._format_resume_banner(session_id, cwd)
+        self.chat_view.run_command("term_chat_output_append", {"text": msg})
 
     def _format_resume_banner(self, session_id, cwd):
         import datetime
@@ -1578,6 +1609,7 @@ class ChatSession:
         summary = info["summary"] or ""
         indented_summary = "\n".join(f"    {line}" for line in summary.splitlines())
         dt = datetime.datetime.fromtimestamp(info[mtime_key]).strftime("%Y-%m-%d %H:%M")
+
         return (
             f"\n\n[Resuming session for {agent}]\n\n"
             f"■ ResumeConversation ({session_id[:8]} : {dt})\n"

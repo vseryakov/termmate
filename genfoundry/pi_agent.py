@@ -660,6 +660,86 @@ def list_pi_sessions(cwd: Optional[str] = None) -> list:
     return results
 
 
+def get_pi_session_tail(session_id: str, cwd: Optional[str] = None) -> Optional[dict]:
+    """Return the last user prompt and assistant text response for a pi session.
+
+    Returns a dict with keys:
+      "prompt"   — last user text (str or None)
+      "response" — last assistant text response (str or None)
+    Returns None if the session file cannot be found.
+    """
+    import glob as _glob
+    import re as _re
+
+    sessions_root = os.path.join(os.path.expanduser("~"), ".pi", "agent", "sessions")
+    if not os.path.isdir(sessions_root):
+        return None
+
+    if cwd:
+        sanitized = _re.sub(r"^[/\\]", "", cwd)
+        sanitized = _re.sub(r"[/\\:]", "-", sanitized)
+        dir_name = f"--{sanitized}--"
+        search_dirs = [os.path.join(sessions_root, dir_name)]
+    else:
+        search_dirs = [
+            os.path.join(sessions_root, d)
+            for d in os.listdir(sessions_root)
+            if os.path.isdir(os.path.join(sessions_root, d))
+        ]
+
+    for session_dir in search_dirs:
+        if not os.path.isdir(session_dir):
+            continue
+        for fpath in _glob.glob(os.path.join(session_dir, "*.jsonl")):
+            try:
+                found_id = None
+                messages = []  # list of (role, text) tuples in order
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    for raw_line in f:
+                        raw_line = raw_line.strip()
+                        if not raw_line:
+                            continue
+                        try:
+                            entry = json.loads(raw_line)
+                        except json.JSONDecodeError:
+                            continue
+                        etype = entry.get("type")
+                        if etype == "session" and not found_id:
+                            found_id = entry.get("id")
+                        elif etype == "message":
+                            msg = entry.get("message", {})
+                            role = msg.get("role")
+                            if role == "user":
+                                text = ""
+                                for block in msg.get("content", []):
+                                    if isinstance(block, dict) and block.get("type") == "text":
+                                        text += block.get("text", "")
+                                messages.append(("user", text.strip()))
+                            elif role == "assistant":
+                                text = ""
+                                for block in msg.get("content", []):
+                                    if isinstance(block, dict) and block.get("type") == "text":
+                                        text += block.get("text", "")
+                                messages.append(("assistant", text.strip()))
+
+                if found_id == session_id:
+                    # Find the last user message and the assistant response that follows it
+                    last_prompt = None
+                    last_response = None
+                    for i in range(len(messages) - 1, -1, -1):
+                        role, text = messages[i]
+                        if role == "assistant" and last_response is None and text:
+                            last_response = text
+                        elif role == "user" and last_prompt is None and text:
+                            last_prompt = text
+                            break
+                    return {"prompt": last_prompt, "response": last_response}
+            except Exception as e:
+                LOG.warning(f"get_pi_session_tail: skipping {fpath}: {e}")
+
+    return None
+
+
 async def query(
     prompt: str,
     options: Optional[AgentOptions] = None
