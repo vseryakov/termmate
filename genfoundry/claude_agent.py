@@ -1073,6 +1073,96 @@ def _parse_session_entry(session_id: str, lite: dict) -> Optional[dict]:
     }
 
 
+def get_claude_session_tail(session_id: str, cwd: Optional[str] = None) -> Optional[dict]:
+    """Return the last user prompt and assistant text response for a Claude session.
+
+    Returns a dict with keys:
+      "prompt"   — last user text (str or None)
+      "response" — last assistant text response (str or None)
+    Returns None if the session file cannot be found.
+
+    Skips tool_result-only user messages and meta/system messages, mirroring
+    the pi agent's get_pi_session_tail() behaviour.
+    """
+    result = _find_session_file_with_dir(session_id, cwd)
+    if result is None:
+        return None
+    fpath, _project_dir = result
+
+    messages = []  # list of (role, text) in file order
+    try:
+        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+            for raw_line in f:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                etype = entry.get("type")
+                if etype == "user":
+                    msg = entry.get("message", {})
+                    if not isinstance(msg, dict):
+                        continue
+                    content = msg.get("content", [])
+                    # skip tool_result-only and meta messages
+                    if entry.get("isMeta") or entry.get("isCompactSummary"):
+                        continue
+                    texts = []
+                    has_tool_result = False
+                    if isinstance(content, str):
+                        texts.append(content)
+                    elif isinstance(content, list):
+                        for blk in content:
+                            if not isinstance(blk, dict):
+                                continue
+                            if blk.get("type") == "tool_result":
+                                has_tool_result = True
+                            elif blk.get("type") == "text":
+                                t = blk.get("text", "")
+                                if t:
+                                    texts.append(t)
+                    if not texts and has_tool_result:
+                        continue
+                    text = "".join(texts).strip()
+                    if text and not _SKIP_PROMPT_RE.match(text):
+                        messages.append(("user", text))
+                elif etype == "assistant":
+                    msg = entry.get("message", {})
+                    if not isinstance(msg, dict):
+                        continue
+                    content = msg.get("content", [])
+                    texts = []
+                    if isinstance(content, str):
+                        texts.append(content)
+                    elif isinstance(content, list):
+                        for blk in content:
+                            if isinstance(blk, dict) and blk.get("type") == "text":
+                                t = blk.get("text", "")
+                                if t:
+                                    texts.append(t)
+                    text = "".join(texts).strip()
+                    if text:
+                        messages.append(("assistant", text))
+    except Exception as e:
+        LOG.warning(f"get_claude_session_tail: error reading {fpath}: {e}")
+        return None
+
+    last_prompt = None
+    last_response = None
+    for i in range(len(messages) - 1, -1, -1):
+        role, text = messages[i]
+        if role == "assistant" and last_response is None:
+            last_response = text
+        elif role == "user" and last_prompt is None:
+            last_prompt = text
+            break
+    return {"prompt": last_prompt, "response": last_response}
+
+
 def list_sessions_for_cwd(cwd: Optional[str] = None) -> list:
     """Return session dicts for the given cwd (or all projects if None), sorted newest-first.
 

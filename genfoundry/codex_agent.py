@@ -1107,6 +1107,163 @@ def list_codex_sessions(cwd: Optional[str] = None) -> list:
         return []
 
 
+async def _get_codex_session_info_rpc(cli_path: str, session_id: str, cwd: Optional[str]) -> Optional[dict]:
+    """One app-server process: thread/read (turns + metadata) for resume display.
+
+    Returns dict with keys: summary, updated_at, prompt, response.
+    Falls back to thread/list for metadata when thread/read lacks it.
+    """
+    import asyncio as _asyncio
+
+    kwargs: Dict[str, Any] = {}
+    if sys.platform == "win32":
+        import subprocess as _subprocess
+        kwargs["creationflags"] = _subprocess.CREATE_NO_WINDOW
+
+    proc = await _asyncio.create_subprocess_exec(
+        cli_path, "app-server",
+        stdin=_asyncio.subprocess.PIPE,
+        stdout=_asyncio.subprocess.PIPE,
+        stderr=_asyncio.subprocess.DEVNULL,
+        **kwargs,
+    )
+
+    rpc_id = 0
+    pending: Dict[int, _asyncio.Future] = {}
+    loop = _asyncio.get_event_loop()
+
+    async def write_json(data: dict) -> None:
+        if proc.stdin:
+            proc.stdin.write((json.dumps(data) + "\n").encode())
+            await proc.stdin.drain()
+
+    async def rpc(method: str, params: dict, timeout: float = 10.0) -> Any:
+        nonlocal rpc_id
+        rpc_id += 1
+        rid = rpc_id
+        fut: _asyncio.Future = loop.create_future()
+        pending[rid] = fut
+        await write_json({"id": rid, "method": method, "params": params})
+        try:
+            return await _asyncio.wait_for(fut, timeout=timeout)
+        except _asyncio.TimeoutError:
+            pending.pop(rid, None)
+            return None
+
+    async def read_loop() -> None:
+        buf = b""
+        while proc.stdout:
+            chunk = await proc.stdout.read(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                try:
+                    msg = json.loads(line.decode("utf-8", errors="replace").strip())
+                    msg_id = msg.get("id")
+                    if msg_id is not None and msg_id in pending:
+                        fut = pending.pop(msg_id)
+                        if not fut.done():
+                            fut.set_result(msg.get("result"))
+                except Exception:
+                    pass
+
+    read_task = _asyncio.create_task(read_loop())
+
+    try:
+        await rpc("initialize", {
+            "clientInfo": {"name": "codyform", "title": "Codyform", "version": "1.0"},
+            "capabilities": {"experimentalApi": True},
+        })
+        await write_json({"method": "initialized"})
+
+        # thread/read with includeTurns gives us metadata + conversation tail in one call.
+        read_result = await rpc("thread/read", {"threadId": session_id, "includeTurns": True})
+
+        thread = (read_result or {}).get("thread", {}) if isinstance(read_result, dict) else {}
+        summary = thread.get("name") or thread.get("preview") or None
+        updated_at = float(thread.get("updatedAt") or 0)
+
+        # If metadata is missing (thread not loaded in server state), fall back to thread/list.
+        if not summary:
+            list_params: Dict[str, Any] = {
+                "sortKey": "updated_at",
+                "sortDirection": "desc",
+                "archived": False,
+                "useStateDbOnly": True,
+            }
+            if cwd:
+                list_params["cwd"] = cwd
+            list_result = await rpc("thread/list", list_params)
+            if list_result and isinstance(list_result, dict):
+                for t in list_result.get("data", []):
+                    if t.get("id") == session_id:
+                        summary = t.get("name") or t.get("preview") or None
+                        updated_at = float(t.get("updatedAt") or 0)
+                        break
+
+        # Extract last prompt and response from turns.
+        last_prompt: Optional[str] = None
+        last_response: Optional[str] = None
+        for turn in reversed(thread.get("turns", [])):
+            for item in reversed(turn.get("items", [])):
+                itype = item.get("type")
+                if itype == "agentMessage" and last_response is None:
+                    text = item.get("text", "").strip()
+                    if text:
+                        last_response = text
+                elif itype == "userMessage" and last_prompt is None:
+                    texts = [
+                        inp.get("text", "")
+                        for inp in item.get("content", [])
+                        if isinstance(inp, dict) and inp.get("type") == "text"
+                    ]
+                    text = "".join(texts).strip()
+                    if text:
+                        last_prompt = text
+            if last_prompt is not None:
+                break
+
+        return {"summary": summary, "updated_at": updated_at, "prompt": last_prompt, "response": last_response}
+
+    finally:
+        read_task.cancel()
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            await _asyncio.wait_for(proc.wait(), timeout=2.0)
+        except Exception:
+            pass
+
+
+def get_codex_session_info(session_id: str, cwd: Optional[str] = None) -> Optional[dict]:
+    """Return metadata and last turn for a Codex thread in a single app-server process.
+
+    Returns a dict with keys:
+      "summary"    — thread name/preview (str or None)
+      "updated_at" — unix timestamp (float)
+      "prompt"     — last user text (str or None)
+      "response"   — last agent text response (str or None)
+    Returns None if the CLI is not found or the RPC fails.
+    """
+    cli = find_codex_cli()
+    if cli is None:
+        return None
+
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_get_codex_session_info_rpc(cli, session_id, cwd))
+        finally:
+            loop.close()
+    except Exception as e:
+        LOG.warning(f"get_codex_session_info RPC failed: {e}")
+        return None
+
+
 if __name__ == "__main__":
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

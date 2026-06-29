@@ -11,8 +11,8 @@ from . import utils as plugin
 from ..genfoundry import (
     ClaudeCodeAgent, CodexAgent, PiAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions, list_pi_sessions)
-from ..genfoundry.claude_agent import find_claude_cli
-from ..genfoundry.codex_agent import find_codex_cli
+from ..genfoundry.claude_agent import find_claude_cli, get_claude_session_tail
+from ..genfoundry.codex_agent import find_codex_cli, get_codex_session_info
 from ..genfoundry.pi_agent import find_pi_cli, get_pi_session_tail
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
 from .chatpanel import LoadingAnimation, RewindConfirmPanel
@@ -1552,7 +1552,8 @@ class ChatSession:
 
         if not quiet:
             if old_session_id:
-                self._append_resume_banner(old_session_id, cwd)
+                session_info = self._fetch_session_info(current_agent_provider, old_session_id, cwd)
+                self._append_resume_banner(current_agent_provider, old_session_id, session_info)
             else:
                 self.chat_view.run_command("term_chat_output_append", {"text": f"\n\n[reconnecting agent...]\n\n"})
 
@@ -1567,54 +1568,58 @@ class ChatSession:
         if region_end > region_start:
             self.add_prompt_highlight(sublime.Region(region_start, region_end))
 
-    def _append_resume_banner(self, session_id, cwd):
-        """Append resume banner and, for pi, replay the last prompt+response with highlight."""
-        agent = self.window.settings().get(CHAT_AGENT, "claude")
-        if agent == "pi":
-            tail = get_pi_session_tail(session_id, cwd)
-            if tail and (tail.get("prompt") or tail.get("response")):
-                banner = self._format_resume_banner(session_id, cwd)
-                if tail.get("prompt"):
-                    self._replay_prompt(tail["prompt"])
+    def _fetch_session_info(self, agent, session_id, cwd):
+        """Fetch session metadata and last turn for the given agent. Returns a unified dict or None.
 
-                    self.chat_view.run_command("term_chat_output_append", {"text": "\n"})
-
-                if tail.get("response"):
-                    self.chat_view.run_command("term_chat_output_append", {"text": tail["response"] + "\n"})
-
-                self.chat_view.run_command("term_chat_output_append", {"text": banner})
-                return
-
-        msg = self._format_resume_banner(session_id, cwd)
-        self.chat_view.run_command("term_chat_output_append", {"text": msg})
-
-    def _format_resume_banner(self, session_id, cwd):
-        import datetime
-        agent = self.window.settings().get(CHAT_AGENT, "claude")
+        Keys: summary (str|None), mtime (float), prompt (str|None), response (str|None).
+        """
         if agent == "codex":
-            sessions = list_codex_sessions(cwd)
-            info = next((s for s in sessions if s["session_id"] == session_id), None)
-            mtime_key = "updated_at"
-        elif agent == "pi":
-            sessions = list_pi_sessions(cwd)
-            info = next((s for s in sessions if s["session_id"] == session_id), None)
-            mtime_key = "mtime"
-        else:
+            info = get_codex_session_info(session_id, cwd)
+            if info:
+                return {"summary": info.get("summary"), "mtime": info.get("updated_at", 0),
+                        "prompt": info.get("prompt"), "response": info.get("response")}
+            return None
+
+        if agent == "claude":
             sessions = list_sessions_for_cwd(cwd)
-            info = next((s for s in sessions if s["session_id"] == session_id), None)
-            mtime_key = "mtime"
-        if not info:
-            return f"\n\n[Resuming session for {agent} {session_id[:8]}]\n\n"
+            meta = next((s for s in sessions if s["session_id"] == session_id), None)
+            tail = get_claude_session_tail(session_id, cwd)
+            if meta or tail:
+                return {"summary": (meta or {}).get("summary"), "mtime": (meta or {}).get("mtime", 0),
+                        "prompt": (tail or {}).get("prompt"), "response": (tail or {}).get("response")}
+            return None
 
-        summary = info["summary"] or ""
-        indented_summary = "\n".join(f"    {line}" for line in summary.splitlines())
-        dt = datetime.datetime.fromtimestamp(info[mtime_key]).strftime("%Y-%m-%d %H:%M")
+        if agent == "pi":
+            sessions = list_pi_sessions(cwd)
+            meta = next((s for s in sessions if s["session_id"] == session_id), None)
+            tail = get_pi_session_tail(session_id, cwd)
+            if meta or tail:
+                return {"summary": (meta or {}).get("summary"), "mtime": (meta or {}).get("mtime", 0),
+                        "prompt": (tail or {}).get("prompt"), "response": (tail or {}).get("response")}
+            return None
 
-        return (
-            f"\n\n[Resuming session for {agent}]\n\n"
-            f"■ ResumeConversation ({session_id[:8]} : {dt})\n"
-            f"{indented_summary}\n\n"
-        )
+        return None
+
+    def _append_resume_banner(self, agent, session_id, session_info):
+        """Render resume banner and last turn to the chat view. Pure display — no I/O."""
+        import datetime
+        self.chat_view.run_command("term_chat_output_append",
+            {"text": f"\n[Resuming session for {agent}]\n\n"})
+
+        if session_info and (session_info.get("prompt") or session_info.get("response")):
+            if session_info.get("prompt"):
+                self._replay_prompt(session_info["prompt"])
+                self.chat_view.run_command("term_chat_output_append", {"text": "\n"})
+            if session_info.get("response"):
+                self.chat_view.run_command("term_chat_output_append", {"text": session_info["response"] + "\n"})
+
+        if session_info and session_info.get("mtime"):
+            dt = datetime.datetime.fromtimestamp(session_info["mtime"]).strftime("%Y-%m-%d %H:%M")
+            self.chat_view.run_command("term_chat_output_append",
+                {"text": f"\n■ ResumeConversation ({session_id[:8]} : {dt})\n\n"})
+        else:
+            self.chat_view.run_command("term_chat_output_append",
+                {"text": f"\n■ ResumeConversation ({session_id[:8]})\n\n"})
 
     def update_plan_mode(self, plan_mode):
         """Update the plan mode for the current session."""
