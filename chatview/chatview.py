@@ -68,6 +68,7 @@ PROMPT_PREFIX = "\n❯ "
 # Global store for active ChatSession: window_id -> ChatSession
 chatview_clients = {}
 
+
 class PlanMode(enum.Enum):
     FAST = "fast"
     PLANNING = "planning"
@@ -1910,6 +1911,25 @@ class ChatViewListener(sublime_plugin.EventListener):
         # Only monitor ChatView chat views
         if not view.settings().get(CHAT_VIEW_FLAG, False) and view.name() != CHAT_VIEW_NAME:
             return None
+
+        # Double-click on a tool call file line → open the file instead of selecting the word
+        if (command_name == "drag_select" and args
+                and args.get("by") == "words"
+                and not args.get("extend", False)
+                and not args.get("additive", False)):
+            window = view.window()
+            if window and window.id() in chatview_clients:
+                session = chatview_clients[window.id()]
+                point = args.get("event", {}).get("x"), args.get("event", {}).get("y")
+                click_point = (
+                    view.window_to_text((point[0], point[1]))
+                    if point[0] is not None and point[1] is not None
+                    else None
+                )
+                if click_point is not None:
+                    line_text = view.substr(view.line(click_point))
+                    if session.message_processor.open_tool_file(line_text, window):
+                        return ("noop", {})
 
         input_start = view.settings().get(CHAT_INPUT_START, 0)
         editable_start = input_start + len(PROMPT_PREFIX)

@@ -1,6 +1,7 @@
 import difflib
 import logging
 import os
+import re
 import xml.etree.ElementTree
 
 import sublime
@@ -9,15 +10,45 @@ from . import utils
 
 LOG = logging.getLogger("TermMate")
 
+_TOOL_FILECHANGE_RE = re.compile(r'^[⏺●]\s+fileChange\s+\(([^,)]+)')
+
+
+def _make_tool_file_re(tool_names):
+    alt = "|".join(re.escape(n) for n in tool_names)
+    return re.compile(rf'^[⏺●]\s+(?:{alt})\s+(\S+?)(?:#L(\d+)(?:-L(\d+))?)?$')
+
+
+def _resolve_path(path_part, cwd):
+    return path_part if os.path.isabs(path_part) else os.path.normpath(os.path.join(cwd, path_part))
+
+
+def _parse_tool_file_line(line_text, tool_file_re, cwd):
+    m = tool_file_re.match(line_text.strip())
+    if not m:
+        return None
+    line_start = int(m.group(2)) if m.group(2) else None
+    return (_resolve_path(m.group(1), cwd), line_start)
+
+
+def _parse_filechange_line(line_text, cwd):
+    m = _TOOL_FILECHANGE_RE.match(line_text.strip())
+    if not m:
+        return None
+    return (_resolve_path(m.group(1).strip(), cwd), None)
+
+
 class BaseChatMessageProcessor:
     """
     Handles buffering, formatting, and displaying messages from the agent.
     """
+    _TOOL_FILE_NAMES = ()
+
     def __init__(self, session):
         self.session = session
         self.markdown_formatter = utils.MarkdownFormatter()
         self.last_is_tool_call = False
         self._plan_text = ""
+        self._tool_file_re = _make_tool_file_re(self._TOOL_FILE_NAMES) if self._TOOL_FILE_NAMES else None
 
     def handle_message(self, message):
         """Dispatch agent message to appropriate handler."""
@@ -69,7 +100,29 @@ class BaseChatMessageProcessor:
             0
         )
 
+    def open_tool_file(self, line_text, window):
+        """Parse a tool-call line and open the referenced file. Returns True if handled."""
+        cwd = (self.session.agent_thread.cwd
+               if self.session.agent_thread else self.session.cwd)
+        if not cwd:
+            return False
+        result = None
+        if self._tool_file_re:
+            result = _parse_tool_file_line(line_text, self._tool_file_re, cwd)
+        if result is None:
+            result = _parse_filechange_line(line_text, cwd)
+        if result is None:
+            return False
+        abs_path, line_start = result
+        if line_start is not None:
+            window.open_file(f"{abs_path}:{line_start}:0", sublime.ENCODED_POSITION)
+        else:
+            window.open_file(abs_path)
+        return True
+
 class ClaudeMessageProcessor(BaseChatMessageProcessor):
+    _TOOL_FILE_NAMES = ("Read", "Edit", "Write")
+
     def _handle_typed_message(self, message):
         if message.type == "assistant":
             self.session.start_loading()
@@ -383,6 +436,8 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
         return f"⏺ {name}" if name else ""
 
 class PiMessageProcessor(BaseChatMessageProcessor):
+    _TOOL_FILE_NAMES = ("read", "edit", "write")
+
     def __init__(self, session):
         super().__init__(session)
         self._in_plan = False
