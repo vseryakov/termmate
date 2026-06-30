@@ -34,7 +34,7 @@ curl -fsSL https://pi.dev/install.sh | sh
 
 ### 2. Authentication
 
-Authenticate the agents via your terminal:
+Authenticate the agents via your terminal, or skip the CLI login by setting API keys directly in TermMate's settings — see [Custom Environment Variables](#custom-environment-variables).
 
 **Claude Code:**
 ```bash
@@ -50,8 +50,6 @@ codex login
 ```bash
 /login
 ```
-
-Alternatively, you can authenticate by setting API keys via environment variables in TermMate's settings. See [Custom Environment Variables](#custom-environment-variables) for details.
 
 ### 3. TermMate Installation
 
@@ -118,25 +116,32 @@ Hover over any gutter dot or click the `↩` button that appears at the prompt l
 
 When confirmed, TermMate forks the session at the selected prompt, removes all subsequent messages from the chat view - letting you explore a different direction without losing the original context.
 
-### Advanced Control (Pro Features)
 
-TermMate provides deep integration with agentic workflows via the Command Palette:
+## Advanced Control
 
-**Plan Mode**
+### Plan Mode
 
-Toggle between **Fast** (direct execution) and **Planning** (deliberative reasoning) via `TermMate: Plan Mode`.
+Switch between two execution styles from the Command Palette: `TermMate: Plan Mode`
 
-**Approve Mode**
+| Mode | Behavior |
+| :--- | :--- |
+| **Fast** (default) | Agent acts immediately — no intermediate steps shown. |
+| **Planning** | Agent outlines a step-by-step plan before doing anything. Useful for large or risky changes. |
 
-Agents perform various actions (tools) like reading files, searching the web, or executing commands. You can control how much manual approval is required via the command palette: `TermMate: Approve Mode`
+### Approve Mode
 
-- **Default**: Prompts for your approval by default.
-- **Allow Edit**: Automatically approves "safe" read/edit operations; still prompts for "risky" commands.
-- **Accept All**: Automatically approves all tool calls, including shell command execution for maximum autonomy.
+Control how much the agent can do without asking you first: `TermMate: Approve Mode`
 
-**Switch Agents & Model Selection**
+| Mode | Behavior |
+| :--- | :--- |
+| **Default** | Prompts you before every tool action. |
+| **Allow Edit** | Auto-approves safe read/edit operations; still prompts for shell commands. |
+| **Accept All** | Auto-approves everything, including shell execution. Maximum autonomy. |
 
-Effortlessly swap between Claude, Codex, Pi Agent, or custom agent providers. Fine-tune performance by selecting specific LLM models for different tasks.
+### Switch Agent & Model
+
+Use `TermMate: Switch Agent` to swap between Claude, Codex, and Pi Agent at any time.
+Use `TermMate: Select Model` to pick a specific LLM model per agent (e.g. `claude-opus-4-5` vs `claude-sonnet-4-5`).
 
 ## Shortcuts & Commands
 
@@ -176,7 +181,9 @@ While TermMate automatically detects most agent CLI installation paths, you may 
 
 The `env` configuration allows you to inject custom environment variables directly into the process when starting an agent CLI command. This is useful for providing API keys, custom base URLs, or passing specific environment values without altering your global system configuration.
 
-For example, to configure **OpenRouter** for Claude, you can provide your OpenRouter API key and base URL in the `env` section of your settings(ANTHROPIC_API_KEY should be empty in the case):
+**Example: OpenRouter for Claude**
+
+Set a custom base URL and auth token so Claude routes through OpenRouter (`ANTHROPIC_API_KEY` must be empty in this case):
 
 ```json
 {
@@ -188,9 +195,21 @@ For example, to configure **OpenRouter** for Claude, you can provide your OpenRo
 }
 ```
 
+**Example: Gemini API key for Pi Agent**
+
+Pi Agent uses the `GEMINI_API_KEY` environment variable. Set it here to authenticate without modifying your system environment:
+
+```json
+{
+    "env": {
+        "GEMINI_API_KEY": "your-gemini-api-key"
+    }
+}
+```
+
 ### Custom Keybindings
 
-By default, TermMate does not register a shortcut for `TermMate: Start Chat` to avoid conflicts. You can manually add a shortcut (like `Cmd+Alt+G` or `Ctrl+Alt+G`) by navigating to `Preferences -> Key Bindings` and adding the following configuration:
+By default, TermMate does not register a shortcut for `TermMate: Start Chat` to avoid conflicts. You can manually add a shortcut (`Cmd+Option+G` on macOS, `Ctrl+Alt+G` on Windows/Linux) by navigating to `Preferences -> Key Bindings` and adding the following configuration:
 
 ```json
 [
