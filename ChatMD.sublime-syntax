@@ -8,6 +8,10 @@ version: 2
 
 contexts:
   main:
+    - match: '^(⏺\s*(?:Read|Edit|Write|read|edit|write|fileChange)\s+)(\S+.*)$'
+      captures:
+        1: entity.name.function.chatview
+        2: variable.function.chatview
     - match: '^(⏺\s*\S+)(.*)$'
       captures:
         1: entity.name.function.chatview
