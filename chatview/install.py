@@ -9,6 +9,7 @@ import sublime
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
 from ..genfoundry.pi_agent import find_pi_cli
+from .chatpanel import LoadingAnimation
 
 AGENT_CLI_NAME = {"claude": "claude", "codex": "codex", "pi": "pi"}
 AGENT_FIND_FN  = {"claude": find_claude_cli, "codex": find_codex_cli, "pi": find_pi_cli}
@@ -124,7 +125,9 @@ class _InstallView:
         view.settings().set("line_numbers", False)
         view.settings().set("gutter", False)
         self._view = view
+        self._loading = LoadingAnimation(view)
         self._write(f"{title}\n{subtitle}\n\n{cmd}\n\n")
+        self._loading.start(lambda: sublime.Region(view.size(), view.size()), "Installing…")
 
     def _write(self, text):
         self._view.run_command("append", {"characters": text, "force": True, "scroll_to_end": True})
@@ -133,6 +136,7 @@ class _InstallView:
         self._write(line)
 
     def set_status(self, text, show_docs=False):
+        self._loading.stop()
         if text:
             self._write(f"\n{text}")
         if show_docs:
