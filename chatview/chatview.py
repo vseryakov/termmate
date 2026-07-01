@@ -11,38 +11,17 @@ from . import utils as plugin
 from ..genfoundry import (
     ClaudeCodeAgent, CodexAgent, PiAgent, AgentOptions, AssistantMessage, TextBlock,
     PermissionResultAllow, PermissionResultDeny, list_sessions_for_cwd, list_codex_sessions, list_pi_sessions)
-from ..genfoundry.claude_agent import find_claude_cli, get_claude_session_tail
-from ..genfoundry.codex_agent import find_codex_cli, get_codex_session_info
-from ..genfoundry.pi_agent import find_pi_cli, get_pi_session_tail
+from ..genfoundry.claude_agent import get_claude_session_tail
+from ..genfoundry.codex_agent import get_codex_session_info
+from ..genfoundry.pi_agent import get_pi_session_tail
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
 from .chatpanel import LoadingAnimation, RewindConfirmPanel
+from .install import run_install, find_existing_cli, get_agent_list_items
 
 def get_available_agents(settings):
     """Returns a list of available agents."""
-    available = []
-
-    # Check claude
-    claude_cmd = settings.get("claude_command")
-    if claude_cmd and shutil.which(claude_cmd):
-        available.append("claude")
-    elif shutil.which("claude") or find_claude_cli():
-        available.append("claude")
-
-    # Check codex
-    codex_cmd = settings.get("codex_command")
-    if codex_cmd and shutil.which(codex_cmd):
-        available.append("codex")
-    elif shutil.which("codex") or find_codex_cli():
-        available.append("codex")
-
-    # Check pi
-    pi_cmd = settings.get("pi_command")
-    if pi_cmd and shutil.which(pi_cmd):
-        available.append("pi")
-    elif shutil.which("pi") or find_pi_cli():
-        available.append("pi")
-
-    return available
+    from .install import AGENT_FIND_FN
+    return [agent for agent in AGENT_FIND_FN if find_existing_cli(agent, settings)]
 
 # Constants for gutter highlights
 PROMPT_HIGHLIGHT_KEY = "chatview_prompt_highlight"
@@ -995,6 +974,7 @@ class ChatSession:
             self.chat_view.run_command("term_chat_output_append", {
                 "text": f"\n\n⚠️ Error: No agent CLI found.\nPlease install Claude CLI (`npm install -g @anthropic-ai/claude-code`) or Codex CLI, or set their paths in {PACKAGE_NAME} settings.\n\n"
             })
+            self.window.run_command("term_chat_install_agent")
             return
 
         # Determine agent provider early
@@ -2849,6 +2829,43 @@ class TermChatImplementPlanCommand(sublime_plugin.WindowCommand):
             # For Codex, we must explicitly exit Plan mode to execute.
             # We use proceed_plan=True to signal CodexAgent to switch mode to 'default' for this turn.
             session.steer("Implement the plan.", proceed_plan=True)
-            
+
             # Force the UI out of plan mode so subsequent turns don't trigger planning.
             self.window.run_command("term_chat_toggle_plan_mode", {"mode": "fast"})
+
+
+class TermChatInstallAgentCommand(sublime_plugin.WindowCommand):
+    def run(self, agent=None):
+        if agent is None:
+            return
+
+        def _on_success(agent, display_name, write_fn):
+            settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+            found = find_existing_cli(agent, settings)
+            if found:
+                write_fn(f"\n{display_name} installed successfully.\n  Installed at: {found}\n")
+            else:
+                write_fn(f"\n{display_name} installed successfully.\n")
+            window_id = self.window.id()
+            if window_id in chatview_clients:
+                session = chatview_clients[window_id]
+                session.available_agents = get_available_agents(settings)
+                # Session was created but aborted early because no CLI was found —
+                # start the agent thread now that one is available.
+                if session.agent_thread is None and session.available_agents:
+                    session.switch_agent(agent)
+            sublime.status_message(f"{display_name} installed.")
+
+        run_install(self.window, agent, _on_success)
+
+    def input(self, args):
+        return TermChatInstallAgentInputHandler()
+
+
+class TermChatInstallAgentInputHandler(sublime_plugin.ListInputHandler):
+    def name(self):
+        return "agent"
+
+    def list_items(self):
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
+        return get_agent_list_items(settings)

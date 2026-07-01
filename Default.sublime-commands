@@ -42,5 +42,9 @@
     {
         "caption": "TermMate: Plan Mode",
         "command": "term_chat_toggle_plan_mode"
+    },
+    {
+        "caption": "TermMate: Install Agent\tinstall agent CLI",
+        "command": "term_chat_install_agent"
     }
 ]
