@@ -5,7 +5,6 @@ import sys
 import threading
 
 import sublime
-import sublime_plugin
 
 from ..genfoundry.claude_agent import find_claude_cli
 from ..genfoundry.codex_agent import find_codex_cli
@@ -14,17 +13,14 @@ from ..genfoundry.pi_agent import find_pi_cli
 AGENT_CLI_NAME = {"claude": "claude", "codex": "codex", "pi": "pi"}
 AGENT_FIND_FN  = {"claude": find_claude_cli, "codex": find_codex_cli, "pi": find_pi_cli}
 AGENT_LABEL    = {"claude": "Claude Code",   "codex": "Codex",        "pi": "Pi Agent"}
+AGENT_DOCS_URL = {
+    "claude": "https://code.claude.com/docs/en/setup",
+    "codex":  "https://developers.openai.com/codex/cli",
+    "pi":     "https://pi.dev/",
+}
 
 
 def find_existing_cli(agent, settings=None):
-    """
-    Return the path to an installed agent CLI, or None.
-
-    Resolution order:
-      1. Custom path from settings (e.g. 'claude_command') if provided and executable
-      2. shutil.which — anything on $PATH
-      3. find_*_cli() — common off-PATH install locations
-    """
     if settings is not None:
         custom = settings.get(f"{agent}_command")
         if custom and shutil.which(custom):
@@ -33,15 +29,6 @@ def find_existing_cli(agent, settings=None):
 
 
 def get_agent_install_info(agent):
-    """
-    Return (display_name, cmd, supported, extra_env).
-
-    Installation targets (no root/sudo required):
-      macOS/Linux — npm packages go to ~/.local/bin via --prefix ~/.local
-                    Pi uses its own curl installer which targets ~/.local/bin
-      Windows     — npm packages go to %APPDATA%\\npm (npm's default user-level
-                    prefix, no elevation needed); Pi is not supported on Windows.
-    """
     home   = os.path.expanduser("~")
     is_win = sys.platform == "win32"
     display = AGENT_LABEL.get(agent, agent)
@@ -94,50 +81,111 @@ def get_agent_install_info(agent):
     return display, None, False, {}
 
 
-def write_to_panel(panel, text):
-    panel.run_command("append", {"characters": text, "force": True, "scroll_to_end": True})
+def _docs_phantom_html(agent):
+    url = AGENT_DOCS_URL.get(agent, "")
+    label = AGENT_LABEL.get(agent, agent)
+    return (
+        "<body style='margin:0;padding:4px 0'>"
+        f"<a href='{url}' style='color:var(--bluish);text-decoration:underline;'>"
+        f"View {label} documentation</a></body>"
+    )
+
+
+def _add_docs_phantom(view, agent):
+    url = AGENT_DOCS_URL.get(agent)
+    if not url:
+        return
+    view.add_phantom(
+        "docs_link",
+        sublime.Region(view.size(), view.size()),
+        _docs_phantom_html(agent),
+        sublime.LAYOUT_BLOCK,
+    )
+
+
+class _InstallView:
+    """Plain-text scratch view that streams install output."""
+
+    def __init__(self, window, title, subtitle, cmd, agent):
+        self._agent = agent
+        view = window.new_file()
+        view.set_name("TermMate Install")
+        view.set_scratch(True)
+        view.settings().set("word_wrap", True)
+        view.settings().set("line_numbers", False)
+        view.settings().set("gutter", False)
+        self._view = view
+        self._write(f"{title}\n{subtitle}\n\n{cmd}\n\n")
+
+    def _write(self, text):
+        self._view.run_command("append", {"characters": text, "force": True, "scroll_to_end": True})
+
+    def append_log(self, line):
+        self._write(line)
+
+    def set_status(self, text, show_docs=False):
+        if text:
+            self._write(f"\n{text}")
+        if show_docs:
+            _add_docs_phantom(self._view, self._agent)
+
+
+def _new_scratch_view(window, title):
+    view = window.new_file()
+    view.set_name("TermMate Install")
+    view.set_scratch(True)
+    view.settings().set("word_wrap", True)
+    view.settings().set("line_numbers", False)
+    view.settings().set("gutter", False)
+    return view
 
 
 def run_install(window, agent, on_success):
-    """
-    Open an output panel, optionally prompt the user if CLI already exists,
-    then run the install command in a background thread.
-
-    on_success(agent, display_name, write_fn) is called on the main thread
-    after a successful install.
-    """
     display_name, cmd, supported, extra_env = get_agent_install_info(agent)
 
-    panel = window.create_output_panel("termmate_install")
-    panel.settings().set("word_wrap", True)
-    window.run_command("show_panel", {"panel": "output.termmate_install"})
-
     if not supported:
-        write_to_panel(panel,
-            f"{display_name} does not have an installer for Windows yet.\n"
-            "Please check the project's documentation for manual setup instructions.\n"
-        )
+        view = _new_scratch_view(window, f"Install {display_name}")
+        view.run_command("append", {
+            "characters": (
+                f"Install {display_name}\nWindows — manual setup required\n\n"
+                f"{display_name} does not have a Windows installer yet.\n"
+                "Please refer to the official documentation for manual setup instructions.\n"
+            ),
+            "force": True,
+        })
+        _add_docs_phantom(view, agent)
         return
 
     existing = find_existing_cli(agent)
+
+    if existing and not os.access(existing, os.W_OK):
+        cmd_display = cmd if sys.platform == "win32" else f"{cmd}"
+        note = (
+            "You may be asked to allow an administrator prompt."
+            if sys.platform == "win32"
+            else "You may be asked for your password."
+        )
+        view = _new_scratch_view(window, f"Update {display_name}")
+        view.run_command("append", {
+            "characters": (
+                f"Update {display_name}\n\n"
+                f"Installed at: {existing}\n\n"
+                f"This installation is owned by an administrator and cannot be updated automatically.\n"
+                f"To update, run in a terminal:\n\n  {cmd_display}\n\n{note}\n"
+            ),
+            "force": True,
+        })
+        _add_docs_phantom(view, agent)
+        return
+
     if existing:
-        if not os.access(existing, os.W_OK):
-            if sys.platform == "win32":
-                prompt_note = "You may be asked to allow an administrator prompt."
-                cmd_prefix = ""
-            else:
-                prompt_note = "You may be asked for your password."
-                cmd_prefix = "$ "
-            write_to_panel(panel,
-                f"{display_name} is already installed at:\n  {existing}\n\n"
-                f"It was installed by an administrator and cannot be updated automatically. To update, open a terminal and run:\n\n"
-                f"  {cmd_prefix}{cmd}\n\n"
-                f"{prompt_note}\n"
-            )
-            return
-        write_to_panel(panel, f"{AGENT_LABEL[agent]} is already installed at:\n  {existing}\n\nUpdating...\n$ {cmd}\n\n")
+        title    = f"Update {display_name}"
+        subtitle = f"Updating from {existing}"
     else:
-        write_to_panel(panel, f"Installing {display_name}...\n$ {cmd}\n\n")
+        title    = f"Install {display_name}"
+        subtitle = "Installing — this may take a moment"
+
+    sheet = _InstallView(window, title, subtitle, cmd, agent)
 
     def _worker():
         env = os.environ.copy()
@@ -156,16 +204,23 @@ def run_install(window, agent, on_success):
                 **kwargs,
             )
             for line in proc.stdout:
-                sublime.set_timeout(lambda l=line: write_to_panel(panel, l), 0)
+                sublime.set_timeout(lambda l=line: sheet.append_log(l), 0)
             proc.wait()
             if proc.returncode == 0:
-                sublime.set_timeout(lambda: on_success(agent, display_name, lambda t: write_to_panel(panel, t)), 0)
+                sublime.set_timeout(
+                    lambda: sheet.set_status(f"Done — {display_name} installed successfully."), 0
+                )
+                sublime.set_timeout(
+                    lambda: on_success(agent, display_name, lambda t: sheet.append_log(t)), 0
+                )
             else:
                 sublime.set_timeout(
-                    lambda: write_to_panel(panel, f"\nInstall failed (exit code {proc.returncode}).\n"), 0
+                    lambda: sheet.set_status(f"Install failed (exit code {proc.returncode}).", show_docs=True), 0
                 )
         except Exception as exc:
-            sublime.set_timeout(lambda: write_to_panel(panel, f"\nError: {exc}\n"), 0)
+            sublime.set_timeout(
+                lambda: sheet.set_status(f"Error: {exc}", show_docs=True), 0
+            )
 
     threading.Thread(target=_worker, daemon=True).start()
 
