@@ -65,7 +65,16 @@ def get_agent_install_info(agent):
 
     if agent == "pi":
         if is_win:
-            return display, None, False, {}
+            cmd = (
+                'powershell -ExecutionPolicy ByPass -c "'
+                'if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {'
+                ' winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements;'
+                ' $env:PATH = [System.Environment]::GetEnvironmentVariable(\'PATH\',\'Machine\') + \';\' + [System.Environment]::GetEnvironmentVariable(\'PATH\',\'User\')'
+                ' };'
+                ' npm install -g --ignore-scripts --min-release-age=0 @earendil-works/pi-coding-agent'
+                '"'
+            )
+            return display, cmd, True, {}
         local_bin = os.path.join(home, ".local", "bin")
         return (
             display,
@@ -232,7 +241,7 @@ def get_agent_list_items(settings):
     for agent in AGENT_FIND_FN:
         existing = find_existing_cli(agent, settings)
         if is_win:
-            location = "not supported on Windows" if agent == "pi" else "%APPDATA%\\npm"
+            location = "%APPDATA%\\npm"
         else:
             location = "~/.local/bin"
         status = f"installed: {existing}" if existing else location
