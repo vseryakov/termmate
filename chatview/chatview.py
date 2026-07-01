@@ -2589,20 +2589,25 @@ class TermChatAgentProviderInputHandler(sublime_plugin.ListInputHandler):
         return "agent"
 
     def list_items(self):
+        labels = {
+            "claude": "claude: (Claude Code CLI by Anthropic)",
+            "codex":  "codex: (Codex CLI by OpenAI)",
+            "pi":     "pi: (Pi Coding Agent by Earendil)",
+        }
+        settings = sublime.load_settings(f"{PACKAGE_NAME}.sublime-settings")
         items = []
-        if "claude" in self.available_agents:
-            items.append(("claude: (Claude Code CLI by Anthropic)", "claude"))
-        if "codex" in self.available_agents:
-            items.append(("codex: (Codex CLI by OpenAI)", "codex"))
-        if "pi" in self.available_agents:
-            items.append(("pi: (Pi Coding Agent by Earendil)", "pi"))
+        for agent in ("claude", "codex", "pi"):
+            if agent not in self.available_agents:
+                continue
+            path = find_existing_cli(agent, settings) or ""
+            items.append(sublime.ListInputItem(labels[agent], agent, annotation=path))
 
         if not items:
-            items.append(("No agent CLI found", ""))
+            items.append(sublime.ListInputItem("No agent CLI found", ""))
 
         if self.current_agent:
             for i, item in enumerate(items):
-                if item[1] == self.current_agent:
+                if item.value == self.current_agent:
                     items.insert(0, items.pop(i))
                     break
 
