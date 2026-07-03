@@ -1,0 +1,10 @@
+TermMate 0.3.2
+==============
+
+- Install Agent CLI from TermMate
+  Set up Claude Code codex or Pi directly from the editor. Run
+  "TermMate: Install Agent" from the command palette — TermMate downloads
+  and installs the selected CLI, No terminal setup required.
+
+- Jump to File from Edit tool (Claude, Codex, Pi)
+  Double-click any file path in Edit Read tool to jump to that file
