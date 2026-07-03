@@ -10,7 +10,7 @@ from . import utils
 
 LOG = logging.getLogger("TermMate")
 
-_TOOL_FILECHANGE_RE = re.compile(r'^[⏺●]\s+fileChange\s+\(([^,)]+)')
+_TOOL_FILECHANGE_RE = re.compile(r'^[⏺●]\s+fileChange\s+([^,\s]+)')
 
 
 def _make_tool_file_re(tool_names):
@@ -204,10 +204,13 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                         text_content += block.text
 
                     elif isinstance(block, dict) and block.get("type") == "tool_use":
-                        if not self.last_is_tool_call:
-                            text_content += "\n"
-                        self.last_is_tool_call = True
-                        text_content += self._format_tool_block(block)
+                        if block.get("name") in ("Edit", "Write"):
+                            pass  # defer to tool_use_result
+                        else:
+                            if not self.last_is_tool_call:
+                                text_content += "\n"
+                            self.last_is_tool_call = True
+                            text_content += self._format_tool_block(block)
 
             if text_content:
                 self.append_content(text_content + "\n")
@@ -247,6 +250,14 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
             if isinstance(user_content, str) and user_content.startswith("<local-command-stdout>"):
                 local_output = xml.etree.ElementTree.fromstring(user_content)
                 self.append_content(local_output.text)
+
+            # Render Edit/Write from tool_use_result (has filePath, oldString, newString, structuredPatch)
+            tool_use_result = inner.get("tool_use_result")
+            if isinstance(tool_use_result, dict) and tool_use_result.get("filePath"):
+                rendered = self._format_edit_result(tool_use_result)
+                if rendered:
+                    self.last_is_tool_call = True
+                    self.append_content("\n" + rendered + "\n")
 
         elif message.type == "error":
             self.append_error(message.content)
@@ -322,24 +333,6 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 elif len(lines) == 1:
                     return f"⏺ Bash {lines[0]}"
 
-        elif name in ("Write", "Edit"):
-            file_path = input_data.get("file_path", "")
-            if file_path:
-                cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
-                _, rel_path = _resolve_rel_path(file_path, cwd)
-                header = f"⏺ {name} {rel_path}"
-
-                if name == "Edit" and "old_string" in input_data and "new_string" in input_data:
-                    old_str = input_data["old_string"]
-                    new_str = input_data["new_string"]
-                    line_no = _find_line_in_file(file_path, old_str, cwd)
-                    if line_no:
-                        header = f"⏺ {name} {rel_path}#L{line_no}"
-                    diff = _make_edit_diff(old_str, new_str, rel_path, start_line=line_no)
-                    if diff:
-                        return header + "\n\n" + self._render_diff_block(diff)
-
-                return header
         elif name in ("Grep", "Glob"):
             pattern = input_data.get("pattern")
             if pattern:
@@ -354,6 +347,33 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 return f"⏺ WebSearch ({query})"
 
         return f"⏺ {name}" if name else ""
+
+    def _format_edit_result(self, tool_use_result):
+        """Render Edit/Write header + diff from tool_use_result data."""
+        file_path = tool_use_result.get("filePath", "")
+        if not file_path:
+            return None
+        cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
+        _, rel_path = _resolve_rel_path(file_path, cwd)
+
+        patches = tool_use_result.get("structuredPatch") or []
+        start_line = patches[0].get("newStart") if patches else None
+
+        # Write creates a new file (no oldString); Edit has both
+        old_str = tool_use_result.get("oldString")
+        new_str = tool_use_result.get("newString")
+        is_edit = old_str is not None
+
+        name = "Edit" if is_edit else "Write"
+        header = f"⏺ {name} {rel_path}#L{start_line}" if start_line else f"⏺ {name} {rel_path}"
+
+        if is_edit:
+            diff = _make_edit_diff(old_str, new_str or "", rel_path, start_line=start_line)
+            if diff:
+                return header + "\n\n" + self._render_diff_block(diff)
+
+        return header
+
 
 class CodexMessageProcessor(BaseChatMessageProcessor):
     def _handle_typed_message(self, message):
@@ -489,7 +509,7 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
                     if rendered:
                         diffs.append(rendered)
 
-            header = f"⏺ fileChange ({', '.join(file_parts)})" if file_parts else "⏺ fileChange"
+            header = f"⏺ fileChange {', '.join(file_parts)}" if file_parts else "⏺ fileChange"
 
             if diffs:
                 return header + "\n" + "\n\n".join(diffs)
@@ -506,6 +526,7 @@ class PiMessageProcessor(BaseChatMessageProcessor):
         self._in_plan = False
         self._plan_text = ""
         self._text_buffer = ""
+        self._pending_edits = {}  # toolCallId -> block dict
 
     def _handle_typed_message(self, message):
         if message.type == "text_delta":
@@ -574,12 +595,24 @@ class PiMessageProcessor(BaseChatMessageProcessor):
             if hasattr(message, "content"):
                 for block in message.content:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
-                        if not self.last_is_tool_call:
-                            self.append_content("\n")
-                        self.last_is_tool_call = True
-                        content = self._format_tool_block(block)
-                        if content:
-                            self.append_content(content + "\n")
+                        if block.get("name") in ("edit", "write"):
+                            tool_call_id = block.get("id")
+                            if tool_call_id:
+                                args = block.get("arguments", {})
+                                self._pending_edits[tool_call_id] = {
+                                    "file_path": args.get("path") or args.get("file_path") or "",
+                                    "old_text": args.get("oldText"),
+                                    "new_text": args.get("newText"),
+                                    "edits": args.get("edits"),
+                                }
+                            # defer to toolResult
+                        else:
+                            if not self.last_is_tool_call:
+                                self.append_content("\n")
+                            self.last_is_tool_call = True
+                            content = self._format_tool_block(block)
+                            if content:
+                                self.append_content(content + "\n")
 
         elif message.type == "system":
             if hasattr(message, "content") and isinstance(message.content, dict):
@@ -631,6 +664,15 @@ class PiMessageProcessor(BaseChatMessageProcessor):
             self.append_content("\n")
 
         elif message.type == "message_end":
+            data = message.content if isinstance(message.content, dict) else {}
+            if data.get("role") == "toolResult" and data.get("toolName") in ("edit", "write") and not data.get("isError"):
+                tool_call_id = data.get("toolCallId")
+                pending = self._pending_edits.pop(tool_call_id, None) if tool_call_id else None
+                rendered = self._format_pi_edit_result(pending, data)
+                if rendered:
+                    self.last_is_tool_call = True
+                    self.append_content("\n" + rendered + "\n")
+
             if isinstance(message.content, dict) and message.content.get("customType") == "proposed-plan":
                 plan_text = message.content.get("content", "")
                 if plan_text.startswith("**Proposed Plan**\n\n"):
@@ -704,42 +746,38 @@ class PiMessageProcessor(BaseChatMessageProcessor):
                 elif len(lines) == 1:
                     return f"⏺ bash {lines[0]}"
 
-        elif name in ("write", "edit"):
-            file_path = input_data.get("file_path") or input_data.get("path") or ""
-            if file_path:
-                cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
-                _, rel_path = _resolve_rel_path(file_path, cwd)
-                header = f"⏺ {name} {rel_path}"
-
-                if name == "edit":
-                    old_text = input_data.get("old_string") or input_data.get("oldText")
-                    new_text = input_data.get("new_string") or input_data.get("newText")
-                    edits = input_data.get("edits") if old_text is None else None
-
-                    if old_text is not None and new_text is not None:
-                        line_no = _find_line_in_file(file_path, old_text, cwd)
-                        if line_no:
-                            header = f"⏺ {name} {rel_path}#L{line_no}"
-                        diff = _make_edit_diff(old_text, new_text, rel_path, start_line=line_no)
-                        if diff:
-                            return header + "\n" + self._render_diff_block(diff)
-
-                    elif edits and isinstance(edits, list):
-                        first_old = edits[0].get("oldText") or ""
-                        line_no = _find_line_in_file(file_path, first_old, cwd) if first_old else None
-                        if line_no:
-                            header = f"⏺ {name} {rel_path}#L{line_no}"
-                        diffs = [d for e in edits
-                                 if (d := _make_edit_diff(
-                                     e.get("oldText") or "", e.get("newText") or "", rel_path,
-                                     start_line=_find_line_in_file(file_path, e.get("oldText") or "", cwd) if e.get("oldText") else None,
-                                 ))]
-                        if diffs:
-                            return header + "\n" + self._render_diff_block("\n".join(diffs))
-
-                return header
         elif name in ("grep", "find", "ls"):
             pattern = input_data.get("pattern") or input_data.get("query") or input_data.get("path") or input_data.get("regex") or ""
             return f"⏺ {name} {pattern}".strip()
 
         return f"⏺ {name}" if name else ""
+
+    def _format_pi_edit_result(self, pending, tool_result_data):
+        """Render edit/write header + diff from Pi toolResult data."""
+        file_path = (pending or {}).get("file_path", "")
+        if not file_path:
+            return None
+        cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
+        _, rel_path = _resolve_rel_path(file_path, cwd)
+
+        name = tool_result_data.get("toolName", "edit")
+        first_line = (tool_result_data.get("details") or {}).get("firstChangedLine")
+        header = f"⏺ {name} {rel_path}#L{first_line}" if first_line else f"⏺ {name} {rel_path}"
+
+        if name == "edit" and pending:
+            edits = pending.get("edits")
+            old_text = pending.get("old_text")
+            new_text = pending.get("new_text")
+
+            if edits and isinstance(edits, list):
+                diffs = [d for e in edits
+                         if (d := _make_edit_diff(e.get("oldText") or "", e.get("newText") or "", rel_path,
+                                                  start_line=first_line))]
+                if diffs:
+                    return header + "\n" + self._render_diff_block("\n".join(diffs))
+            elif old_text is not None:
+                diff = _make_edit_diff(old_text, new_text or "", rel_path, start_line=first_line)
+                if diff:
+                    return header + "\n" + self._render_diff_block(diff)
+
+        return header
