@@ -10,12 +10,9 @@ from . import utils
 
 LOG = logging.getLogger("TermMate")
 
-_TOOL_FILECHANGE_RE = re.compile(r'^[⏺●]\s+fileChange\s+([^,\s]+)')
-
-
 def _make_tool_file_re(tool_names):
     alt = "|".join(re.escape(n) for n in tool_names)
-    return re.compile(rf'^[⏺●]\s+(?:{alt})\s+(\S+?)(?:#L(\d+)(?:-L(\d+))?)?$')
+    return re.compile(rf'^⏺ (?:{alt}) (.+?)(?:#L(\d+)(?:-L(\d+))?)?(?:,.*)?$')
 
 
 def _resolve_path(path_part, cwd):
@@ -37,7 +34,7 @@ def _parse_tool_file_line(line_text, tool_file_re, cwd):
     if not m:
         return None
     line_start = int(m.group(2)) if m.group(2) else None
-    return (_resolve_path(m.group(1), cwd), line_start)
+    return (_resolve_path(m.group(1).strip(), cwd), line_start)
 
 
 def _find_line_in_file(file_path, old_text, cwd):
@@ -89,17 +86,6 @@ def _diff_start_line(diff_text):
     """Return the destination start line from the first @@ hunk, or None."""
     m = re.search(r'^@@ -\d+(?:,\d+)? \+(\d+)', diff_text, re.MULTILINE)
     return int(m.group(1)) if m else None
-
-
-def _parse_filechange_line(line_text, cwd):
-    m = _TOOL_FILECHANGE_RE.match(line_text.strip())
-    if not m:
-        return None
-    raw = m.group(1).strip()
-    lm = re.search(r'#L(\d+)', raw)
-    line_no = int(lm.group(1)) if lm else None
-    path = raw[:lm.start()] if lm else raw
-    return (_resolve_path(path, cwd), line_no)
 
 
 class BaseChatMessageProcessor:
@@ -171,11 +157,7 @@ class BaseChatMessageProcessor:
                if self.session.agent_thread else self.session.cwd)
         if not cwd:
             return False
-        result = None
-        if self._tool_file_re:
-            result = _parse_tool_file_line(line_text, self._tool_file_re, cwd)
-        if result is None:
-            result = _parse_filechange_line(line_text, cwd)
+        result = _parse_tool_file_line(line_text, self._tool_file_re, cwd) if self._tool_file_re else None
         if result is None:
             return False
         abs_path, line_start = result
@@ -376,6 +358,8 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
 
 
 class CodexMessageProcessor(BaseChatMessageProcessor):
+    _TOOL_FILE_NAMES = ("fileChange",)
+
     def _handle_typed_message(self, message):
         if message.type == "assistant":
             self.session.start_loading()
