@@ -22,6 +22,16 @@ def _resolve_path(path_part, cwd):
     return path_part if os.path.isabs(path_part) else os.path.normpath(os.path.join(cwd, path_part))
 
 
+def _resolve_rel_path(path, cwd):
+    """Return (abs_path, rel_path) for a file path against cwd."""
+    abs_path = _resolve_path(path, cwd)
+    try:
+        rel = os.path.relpath(abs_path, cwd)
+    except Exception:
+        rel = path
+    return abs_path, rel
+
+
 def _parse_tool_file_line(line_text, tool_file_re, cwd):
     m = tool_file_re.match(line_text.strip())
     if not m:
@@ -30,11 +40,66 @@ def _parse_tool_file_line(line_text, tool_file_re, cwd):
     return (_resolve_path(m.group(1), cwd), line_start)
 
 
+def _find_line_in_file(file_path, old_text, cwd):
+    """Return 1-based line number where old_text starts in file, or None."""
+    try:
+        abs_path = file_path if os.path.isabs(file_path) else os.path.join(cwd, file_path)
+        with open(abs_path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        idx = text.find(old_text)
+        if idx != -1:
+            return text[:idx].count("\n") + 1
+    except Exception:
+        pass
+    return None
+
+
+def _make_edit_diff(old_str, new_str, rel_path, start_line=None):
+    """Return unified diff text (without --- +++ header lines), or None.
+
+    If start_line is given, hunk headers are shifted so line numbers reflect
+    the actual position in the file rather than starting at 1.
+    """
+    if old_str and not old_str.endswith("\n"): old_str += "\n"
+    if new_str and not new_str.endswith("\n"): new_str += "\n"
+    lines = list(difflib.unified_diff(
+        old_str.splitlines(keepends=True),
+        new_str.splitlines(keepends=True),
+        fromfile=f"a/{rel_path}",
+        tofile=f"b/{rel_path}",
+    ))
+    if len(lines) <= 2:
+        return None
+    diff = "".join(lines[2:])
+    if start_line and start_line > 1:
+        offset = start_line - 1
+        def _shift_hunk(m):
+            old_s = int(m.group(1)) + offset
+            old_c = m.group(2)
+            new_s = int(m.group(3)) + offset
+            new_c = m.group(4)
+            old_part = f"{old_s}" if old_c is None else f"{old_s},{old_c}"
+            new_part = f"{new_s}" if new_c is None else f"{new_s},{new_c}"
+            return f"@@ -{old_part} +{new_part} @@"
+        diff = re.sub(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', _shift_hunk, diff)
+    return diff
+
+
+def _diff_start_line(diff_text):
+    """Return the destination start line from the first @@ hunk, or None."""
+    m = re.search(r'^@@ -\d+(?:,\d+)? \+(\d+)', diff_text, re.MULTILINE)
+    return int(m.group(1)) if m else None
+
+
 def _parse_filechange_line(line_text, cwd):
     m = _TOOL_FILECHANGE_RE.match(line_text.strip())
     if not m:
         return None
-    return (_resolve_path(m.group(1).strip(), cwd), None)
+    raw = m.group(1).strip()
+    lm = re.search(r'#L(\d+)', raw)
+    line_no = int(lm.group(1)) if lm else None
+    path = raw[:lm.start()] if lm else raw
+    return (_resolve_path(path, cwd), line_no)
 
 
 class BaseChatMessageProcessor:
@@ -260,43 +325,19 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
         elif name in ("Write", "Edit"):
             file_path = input_data.get("file_path", "")
             if file_path:
-                try:
-                    rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
-                except Exception:
-                    rel_path = file_path
+                cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
+                _, rel_path = _resolve_rel_path(file_path, cwd)
                 header = f"⏺ {name} {rel_path}"
 
-                # Render diff for Edit
                 if name == "Edit" and "old_string" in input_data and "new_string" in input_data:
                     old_str = input_data["old_string"]
                     new_str = input_data["new_string"]
-
-                    # Find line number of old_string in file for jump-to support
-                    try:
-                        with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
-                            file_text = fh.read()
-                        idx = file_text.find(old_str)
-                        if idx != -1:
-                            line_no = file_text[:idx].count("\n") + 1
-                            header = f"⏺ {name} {rel_path}#L{line_no}"
-                    except Exception:
-                        pass
-
-                    if old_str and not old_str.endswith("\n"): old_str += "\n"
-                    if new_str and not new_str.endswith("\n"): new_str += "\n"
-                    old_lines = old_str.splitlines(keepends=True)
-                    new_lines = new_str.splitlines(keepends=True)
-
-                    diff_lines = list(difflib.unified_diff(
-                        old_lines, new_lines,
-                        fromfile=f"a/{rel_path}",
-                        tofile=f"b/{rel_path}"
-                    ))
-
-                    if len(diff_lines) > 2:
-                        # Skip --- and +++ lines
-                        diff_text = "".join(diff_lines[2:])
-                        return header + "\n\n" + self._render_diff_block(diff_text)
+                    line_no = _find_line_in_file(file_path, old_str, cwd)
+                    if line_no:
+                        header = f"⏺ {name} {rel_path}#L{line_no}"
+                    diff = _make_edit_diff(old_str, new_str, rel_path, start_line=line_no)
+                    if diff:
+                        return header + "\n\n" + self._render_diff_block(diff)
 
                 return header
         elif name in ("Grep", "Glob"):
@@ -428,17 +469,27 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
                     return f"⏺ command ({lines[0]})"
             return "⏺ command"
         elif name == "fileChange":
-            filenames = block.get("filenames", [])
-            header = f"⏺ fileChange ({', '.join(filenames)})" if filenames else "⏺ fileChange"
-
             changes = block.get("changes", [])
+            cwd = (self.session.agent_thread.cwd
+                   if self.session.agent_thread else self.session.cwd) or ""
+
+            file_parts = []
             diffs = []
             for change in changes:
-                diff_text = change.get("diff") or change.get("patch") or change.get("unified_diff")
+                path = change.get("path", "")
+                diff_text = change.get("diff") or ""
+
+                if path:
+                    _, rel = _resolve_rel_path(path, cwd)
+                    line_no = _diff_start_line(diff_text) if diff_text else None
+                    file_parts.append(f"{rel}#L{line_no}" if line_no else rel)
+
                 if diff_text:
-                    diff_blocks = self._render_diff_block(diff_text)
-                    if diff_blocks:
-                        diffs.append(diff_blocks)
+                    rendered = self._render_diff_block(diff_text)
+                    if rendered:
+                        diffs.append(rendered)
+
+            header = f"⏺ fileChange ({', '.join(file_parts)})" if file_parts else "⏺ fileChange"
 
             if diffs:
                 return header + "\n" + "\n\n".join(diffs)
@@ -656,51 +707,35 @@ class PiMessageProcessor(BaseChatMessageProcessor):
         elif name in ("write", "edit"):
             file_path = input_data.get("file_path") or input_data.get("path") or ""
             if file_path:
-                try:
-                    if os.path.isabs(file_path):
-                        rel_path = os.path.relpath(file_path, self.session.agent_thread.cwd)
-                    else:
-                        rel_path = file_path
-                except Exception:
-                    rel_path = file_path
+                cwd = self.session.agent_thread.cwd if self.session.agent_thread else ""
+                _, rel_path = _resolve_rel_path(file_path, cwd)
                 header = f"⏺ {name} {rel_path}"
 
-                old_text = input_data.get("old_string") or input_data.get("oldText")
-                new_text = input_data.get("new_string") or input_data.get("newText")
-                if name == "edit" and old_text is not None and new_text is not None:
-                    if old_text and not old_text.endswith("\n"): old_text += "\n"
-                    if new_text and not new_text.endswith("\n"): new_text += "\n"
-                    old_lines = old_text.splitlines(keepends=True)
-                    new_lines = new_text.splitlines(keepends=True)
+                if name == "edit":
+                    old_text = input_data.get("old_string") or input_data.get("oldText")
+                    new_text = input_data.get("new_string") or input_data.get("newText")
+                    edits = input_data.get("edits") if old_text is None else None
 
-                    diff_lines = list(difflib.unified_diff(
-                        old_lines, new_lines,
-                        fromfile=f"a/{rel_path}",
-                        tofile=f"b/{rel_path}"
-                    ))
+                    if old_text is not None and new_text is not None:
+                        line_no = _find_line_in_file(file_path, old_text, cwd)
+                        if line_no:
+                            header = f"⏺ {name} {rel_path}#L{line_no}"
+                        diff = _make_edit_diff(old_text, new_text, rel_path, start_line=line_no)
+                        if diff:
+                            return header + "\n" + self._render_diff_block(diff)
 
-                    if len(diff_lines) > 2:
-                        diff_text = "".join(diff_lines[2:])
-                        return header + "\n" + self._render_diff_block(diff_text)
-                        
-                elif name == "edit" and "edits" in input_data:
-                    # pi agent edits array
-                    edits = input_data.get("edits", [])
-                    if edits and isinstance(edits, list):
-                        diff_outputs = []
-                        for edit in edits:
-                            old_t = edit.get("oldText")
-                            new_t = edit.get("newText")
-                            if old_t is not None and new_t is not None:
-                                if old_t and not old_t.endswith("\n"): old_t += "\n"
-                                if new_t and not new_t.endswith("\n"): new_t += "\n"
-                                o_lines = old_t.splitlines(keepends=True)
-                                n_lines = new_t.splitlines(keepends=True)
-                                d_lines = list(difflib.unified_diff(o_lines, n_lines, fromfile=f"a/{rel_path}", tofile=f"b/{rel_path}"))
-                                if len(d_lines) > 2:
-                                    diff_outputs.append("".join(d_lines[2:]))
-                        if diff_outputs:
-                            return header + "\n" + self._render_diff_block("\n".join(diff_outputs))
+                    elif edits and isinstance(edits, list):
+                        first_old = edits[0].get("oldText") or ""
+                        line_no = _find_line_in_file(file_path, first_old, cwd) if first_old else None
+                        if line_no:
+                            header = f"⏺ {name} {rel_path}#L{line_no}"
+                        diffs = [d for e in edits
+                                 if (d := _make_edit_diff(
+                                     e.get("oldText") or "", e.get("newText") or "", rel_path,
+                                     start_line=_find_line_in_file(file_path, e.get("oldText") or "", cwd) if e.get("oldText") else None,
+                                 ))]
+                        if diffs:
+                            return header + "\n" + self._render_diff_block("\n".join(diffs))
 
                 return header
         elif name in ("grep", "find", "ls"):
