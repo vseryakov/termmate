@@ -270,6 +270,18 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 if name == "Edit" and "old_string" in input_data and "new_string" in input_data:
                     old_str = input_data["old_string"]
                     new_str = input_data["new_string"]
+
+                    # Find line number of old_string in file for jump-to support
+                    try:
+                        with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                            file_text = fh.read()
+                        idx = file_text.find(old_str)
+                        if idx != -1:
+                            line_no = file_text[:idx].count("\n") + 1
+                            header = f"⏺ {name} {rel_path}#L{line_no}"
+                    except Exception:
+                        pass
+
                     if old_str and not old_str.endswith("\n"): old_str += "\n"
                     if new_str and not new_str.endswith("\n"): new_str += "\n"
                     old_lines = old_str.splitlines(keepends=True)
