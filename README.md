@@ -10,9 +10,30 @@ For detailed usage, please refer to the [TermMate Documentation](https://termmat
 
 ## Getting Started
 
-### 1. Prerequisites
+### 1. TermMate Installation
 
-TermMate relies on external agent CLIs. Install at least one of the following CLI tools based on your preference:
+Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMate):
+
+1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
+2. Type `Package Control: Install Package` and press `Enter`.
+3. Search for `TermMate` and press `Enter`.
+
+**Or install manually from [Releases](https://github.com/flashmodel/termmate/releases):**
+
+1. Download `TermMate.sublime-package` from the [latest release](https://github.com/flashmodel/termmate/releases).
+2. Copy `TermMate.sublime-package` into your Sublime Text **Installed Packages** directory:
+   - **macOS**: `~/Library/Application Support/Sublime Text/Installed Packages/`
+   - **Windows**: `%APPDATA%\Sublime Text\Installed Packages\`
+   - **Linux**: `~/.config/sublime-text/Installed Packages/`
+3. Restart Sublime Text.
+
+### 2. Install an Agent CLI
+
+TermMate relies on external agent CLIs. If you already have Claude Code, Codex, or Pi Agent installed, TermMate will detect them automatically — no extra setup needed.
+
+Otherwise, the easiest way is to install directly from within Sublime Text: open the Command Palette, type `TermMate: Install Agent`, and select the agent you want. TermMate will run the installation in dedicated panel and notify you when it's complete. CLIs are installed to `~/.local/bin` on macOS/Linux and `%APPDATA%\npm` on Windows.
+
+**Or install manually from your terminal:**
 
 **Claude Code:**
 ```bash
@@ -21,7 +42,11 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 **Codex:**
 ```bash
-npm install -g @openai/codex
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+Windows:
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
 ```
 
 **Pi Agent:**
@@ -32,7 +57,7 @@ curl -fsSL https://pi.dev/install.sh | sh
 > **Note:** TermMate automatically detects CLI installation paths across multiple environments, including **Homebrew**, **npm-global**, **Yarn**, and common local binary directories. You typically don't need to manually configure environment variables or search paths.
 
 
-### 2. Authentication
+### 3. Authentication
 
 Authenticate the agents via your terminal, or skip the CLI login by setting API keys directly in TermMate's settings — see [Custom Environment Variables](#custom-environment-variables).
 
@@ -50,23 +75,6 @@ codex login
 ```bash
 /login
 ```
-
-### 3. TermMate Installation
-
-Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMate):
-
-1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
-2. Type `Package Control: Install Package` and press `Enter`.
-3. Search for `TermMate` and press `Enter`.
-
-**Or install manually from [Releases](https://github.com/flashmodel/termmate/releases):**
-
-1. Download `TermMate.sublime-package` from the [latest release](https://github.com/flashmodel/termmate/releases).
-2. Copy `TermMate.sublime-package` into your Sublime Text **Installed Packages** directory:
-   - **macOS**: `~/Library/Application Support/Sublime Text/Installed Packages/`
-   - **Windows**: `%APPDATA%\Sublime Text\Installed Packages\`
-   - **Linux**: `~/.config/sublime-text/Installed Packages/`
-3. Restart Sublime Text.
 
 ### 4. Start Chat
 
@@ -147,6 +155,7 @@ Use `TermMate: Select Model` to pick a specific LLM model per agent (e.g. `claud
 
 | Action | macOS | Windows/Linux | Command Palette |
 | :--- | :--- | :--- | :--- |
+| **Install Agent** | - | - | `TermMate: Install Agent` |
 | **Start New Chat** | - | - | `TermMate: Start Chat` |
 | **Split Chat Window** | - | - | `TermMate: Split Chat Window` |
 | **Send Message** | `Cmd+Enter` | `Ctrl+Enter` | - |
