@@ -76,6 +76,16 @@ codex login
 /login
 ```
 
+Alternatively, to skip the CLI login — for example authenticating Pi Agent with a Gemini API key — add this to `TermMate.sublime-settings`:
+
+```json
+{
+    "env": {
+        "GEMINI_API_KEY": "your-gemini-api-key"
+    }
+}
+```
+
 ### 4. Start Chat
 
 - Open the command palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux).
@@ -90,19 +100,11 @@ codex login
 
 Use the command palette (`TermMate: Prompt`) to send a quick instruction to the agent without opening the chat view manually.
 
-**2. Clear Session**
-
-To reset the current conversation history and start a completely fresh context, open the command palette and run **`TermMate: Clear Session`**. This will reload the agent and clear its memory for the current workspace.
-
-**3. Resume Previous Conversation**
-
-Run **`TermMate: Resume Session`** from the command palette to continue a past conversation. A quick panel lists previous sessions for the current workspace, each showing a short summary and timestamp. Select one and the agent picks up exactly where it left off.
-
-**4. Set Working Directory**
+**2. Set Working Directory**
 
 Right-click on any folder in the sidebar and select **Set Working Directory** to set the working directory for the agent. This affects the current working directory when agents execute commands or access files. You can also use the command palette.
 
-**5. Chat with Current File or Selection**
+**3. Chat with Current File or Selection**
 
 You can right-click in any file, tab, and select **Chat with Agent**. This will:
 
@@ -110,20 +112,13 @@ You can right-click in any file, tab, and select **Chat with Agent**. This will:
 - Insert a reference to the file (`@filename`) or selected line range (`@filename#L1-10`) into the message prompt.
 - Tagged files will be automatically sent as context to the active agent.
 
-**6. Smart Completion**
+**4. Smart Completion**
 
 Type `@` in the chat view for real-time suggestions of files and workspace symbols.
 
-**7. Split Chat Window**
+**5. Split Chat Window**
 
 You can use the command palette (`TermMate: Split Chat Window`) or right-click the chat view tab and select **TermMate: Split Chat Window** to split the editor layout and place the chat view into its own dedicated pane. By default, this pane is isolated so opening other files will not overwrite the chat view. This isolation behavior can be configured via the `dedicated_chat_pane` setting.
-
-**8. Rewind Conversation**
-
-Hover over any gutter dot or click the `↩` button that appears at the prompt line to rewind the conversation to that point. A confirmation panel lets you confirm or cancel before the rewind takes effect.
-
-When confirmed, TermMate forks the session at the selected prompt, removes all subsequent messages from the chat view - letting you explore a different direction without losing the original context.
-
 
 ## Advanced Control
 
@@ -150,6 +145,22 @@ Control how much the agent can do without asking you first: `TermMate: Approve M
 
 Use `TermMate: Switch Agent` to swap between Claude, Codex, and Pi Agent at any time.
 Use `TermMate: Select Model` to pick a specific LLM model per agent (e.g. `claude-opus-4-5` vs `claude-sonnet-4-5`).
+
+## Session Management: Clear, Resume & Rewind
+
+**1. Clear Session**
+
+To reset the current conversation history and start a completely fresh context, open the command palette and run **`TermMate: Clear Session`**. This will reload the agent and clear its memory for the current workspace.
+
+**2. Resume Previous Conversation**
+
+Run **`TermMate: Resume Session`** from the command palette to continue a past conversation. A quick panel lists previous sessions for the current workspace, each showing a short summary and timestamp. Select one and the agent picks up exactly where it left off.
+
+**3. Rewind Conversation**
+
+Hover over any gutter dot or click the `↩` button that appears at the prompt line to rewind the conversation to that point. A confirmation panel lets you confirm or cancel before the rewind takes effect.
+
+When confirmed, TermMate forks the session at the selected prompt, removes all subsequent messages from the chat view - letting you explore a different direction without losing the original context.
 
 ## Shortcuts & Commands
 
