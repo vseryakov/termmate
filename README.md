@@ -264,6 +264,7 @@ If you prefer using just the `Escape` key to interrupt the conversation when the
 
 - **Selection as Context**: Select code before starting a chat to focus the agent's attention on specific logic.
 - **Iterative Refinement**: Use **Planning Mode** for large architectural changes to see the agent's proposed steps before they are applied.
+- **Reviewing Changes with GitSavvy**: Use [GitSavvy](https://packagecontrol.io/packages/GitSavvy)'s `git: diff` command to review file diffs after the agent makes edits — the inline diff view makes it easy to inspect, stage, or discard individual hunks.
 
 ## Privacy & Data Handling
 

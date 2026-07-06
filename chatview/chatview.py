@@ -1945,7 +1945,7 @@ class ChatViewListener(sublime_plugin.EventListener):
                 )
                 if click_point is not None:
                     line_text = view.substr(view.line(click_point))
-                    if session.message_processor.open_tool_file(line_text, window):
+                    if session.message_processor.open_tool_file(line_text, window, view=view, point=click_point):
                         return ("noop", {})
 
         input_start = view.settings().get(CHAT_INPUT_START, 0)

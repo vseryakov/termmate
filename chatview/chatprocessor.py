@@ -88,6 +88,9 @@ def _diff_start_line(diff_text):
     return int(m.group(1)) if m else None
 
 
+_HUNK_LINE_RE = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+
+
 class BaseChatMessageProcessor:
     """
     Handles buffering, formatting, and displaying messages from the agent.
@@ -151,13 +154,15 @@ class BaseChatMessageProcessor:
             0
         )
 
-    def open_tool_file(self, line_text, window):
+    def open_tool_file(self, line_text, window, view=None, point=None):
         """Parse a tool-call line and open the referenced file. Returns True if handled."""
         cwd = (self.session.agent_thread.cwd
                if self.session.agent_thread else self.session.cwd)
         if not cwd:
             return False
         result = _parse_tool_file_line(line_text, self._tool_file_re, cwd) if self._tool_file_re else None
+        if result is None:
+            result = self._parse_diff_hunk_line(line_text, view, point, cwd)
         if result is None:
             return False
         abs_path, line_start = result
@@ -166,6 +171,28 @@ class BaseChatMessageProcessor:
         else:
             window.open_file(abs_path)
         return True
+
+    def _parse_diff_hunk_line(self, line_text, view, point, cwd):
+        """Resolve a diff hunk header (@@ -a,b +c,d @@) to (abs_path, line).
+
+        The hunk line carries no file path, so scan upward in the view for the
+        nearest tool-call header line above the diff block and take its path.
+        """
+        if view is None or point is None or self._tool_file_re is None:
+            return None
+        m = _HUNK_LINE_RE.match(line_text.strip())
+        if not m:
+            return None
+        dest_line = int(m.group(1))
+        row = view.rowcol(point)[0]
+        for r in range(row - 1, max(row - 200, -1), -1):
+            text = view.substr(view.line(view.text_point(r, 0))).strip()
+            parsed = _parse_tool_file_line(text, self._tool_file_re, cwd)
+            if parsed is not None:
+                return (parsed[0], dest_line)
+            if text.startswith("⏺"):
+                return None
+        return None
 
 class ClaudeMessageProcessor(BaseChatMessageProcessor):
     _TOOL_FILE_NAMES = ("Read", "Edit", "Write")
