@@ -197,7 +197,12 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
             if text_content:
                 self.append_content(text_content + "\n")
         elif message.type == "system":
-            if hasattr(message, "content") and isinstance(message.content, dict):
+            raw = getattr(message, "raw_data", {}) or {}
+            if raw.get("subtype") == "status" and raw.get("status") == "compacting":
+                self.session.start_loading(text="compacting")
+            elif raw.get("subtype") == "thinking_tokens":
+                self.session.start_loading(text="thinking")
+            elif hasattr(message, "content") and isinstance(message.content, dict):
                 session_id = message.content.get("session_id")
                 if session_id and message.content.get("subtype") == "init":
                     LOG.info(f"system session_id: {session_id}")
@@ -232,6 +237,7 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
             if isinstance(user_content, str) and user_content.startswith("<local-command-stdout>"):
                 local_output = xml.etree.ElementTree.fromstring(user_content)
                 self.append_content(local_output.text)
+                self.append_content("\n")
 
             # Render Edit/Write from tool_use_result (has filePath, oldString, newString, structuredPatch)
             tool_use_result = inner.get("tool_use_result")
