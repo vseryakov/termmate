@@ -16,6 +16,7 @@ from ..genfoundry.codex_agent import get_codex_session_info
 from ..genfoundry.pi_agent import get_pi_session_tail
 from .chatprocessor import ClaudeMessageProcessor, CodexMessageProcessor, PiMessageProcessor
 from .chatpanel import LoadingAnimation, RewindConfirmPanel
+from .artifact import FileChangesArtifact
 from .install import run_install, find_existing_cli, get_agent_list_items
 
 def get_available_agents(settings):
@@ -1012,6 +1013,9 @@ class ChatSession:
         # Only persist session_id after the first user message
         self.has_sent_message = bool(session_id)
 
+        # End-of-turn file changes artifact (records edit diffs, renders file list)
+        self.artifact = FileChangesArtifact(self.chat_view, self.window, CHAT_INPUT_START)
+
         self.implement_plan_phantoms = sublime.PhantomSet(self.chat_view, "implement_plan")
         self.implement_plan_buttons = [] # List of (region, phantom) tuples
 
@@ -1306,6 +1310,18 @@ class ChatSession:
         if self.agent_thread:
             self.agent_thread.steer(text, proceed_plan=proceed_plan)
 
+    def record_file_change(self, abs_path, rel_path, diff_text):
+        """Record an edit diff so the file is listed in the end-of-turn artifact."""
+        self.artifact.record(abs_path, rel_path, diff_text)
+
+    def show_file_changes_artifact(self):
+        """Append the collapsed file changes artifact for the finished turn."""
+        self.artifact.show()
+
+    def open_artifact_diff_at(self, point):
+        """If point is on an artifact file name, open its diff view. Returns True if handled."""
+        return self.artifact.open_diff_at(point)
+
     def add_prompt_highlight(self, region):
         """Add a gutter highlight and an end-of-line rewind button for a submitted prompt."""
         region_index = len(self.prompt_regions)
@@ -1436,6 +1452,8 @@ class ChatSession:
         self.prompt_button_phantoms = self.prompt_button_phantoms[:phantom_index]
         self._redraw_prompt_highlights()
 
+        self.artifact.truncate(cut_point)
+
         rewind_text = self.chat_view.substr(region)
 
         self.session_allow_all = False
@@ -1462,6 +1480,7 @@ class ChatSession:
         # Stop any ongoing loading animation
         self.stop_loading()
         self.clear_prompt_highlights()
+        self.artifact.clear()
         self.session_allow_all = False
         self.has_sent_message = False
         self.chat_view.settings().set(CHAT_SESSION_ID, None)
@@ -1486,6 +1505,7 @@ class ChatSession:
         self.available_models = []
         self.chat_view.settings().set(CHAT_SESSION_ID, None)
         self.clear_prompt_buttons()
+        self.artifact.clear()
 
         if self.agent_thread:
             self.agent_thread.stop()
@@ -1689,6 +1709,8 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set("draw_minimap", False)
         chat_view.settings().set("line_numbers", False)
         chat_view.settings().set("word_wrap", True)
+        # Needed so the file-changes artifact can be expanded via the gutter
+        chat_view.settings().set("fold_buttons", True)
         chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
         shortcut = "Command+Enter" if sublime.platform() == "osx" else "Ctrl+Enter"
@@ -1984,6 +2006,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             return None
 
         # Double-click on a tool call file line → open the file instead of selecting the word
+        # Also handles artifact file name lines → open the recorded diff view
         if (command_name == "drag_select" and args
                 and args.get("by") == "words"
                 and not args.get("extend", False)
@@ -2000,6 +2023,8 @@ class ChatViewListener(sublime_plugin.EventListener):
                 if click_point is not None:
                     line_text = view.substr(view.line(click_point))
                     if session.message_processor.open_tool_file(line_text, window, view=view, point=click_point):
+                        return ("noop", {})
+                    if session.open_artifact_diff_at(click_point):
                         return ("noop", {})
 
         editable_start = input_editable_start(view)

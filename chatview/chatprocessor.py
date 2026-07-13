@@ -82,6 +82,20 @@ def _make_edit_diff(old_str, new_str, rel_path, start_line=None):
     return diff
 
 
+def _diff_from_structured_patch(patches):
+    """Build unified diff hunk text from Claude structuredPatch data, or None."""
+    parts = []
+    for hunk in patches or []:
+        try:
+            header = "@@ -{},{} +{},{} @@".format(
+                hunk["oldStart"], hunk["oldLines"], hunk["newStart"], hunk["newLines"])
+        except (KeyError, TypeError):
+            continue
+        lines = hunk.get("lines") or []
+        parts.append("\n".join([header] + list(lines)))
+    return "\n".join(parts) + "\n" if parts else None
+
+
 def _diff_start_line(diff_text):
     """Return the destination start line from the first @@ hunk, or None."""
     m = re.search(r'^@@ -\d+(?:,\d+)? \+(\d+)', diff_text, re.MULTILINE)
@@ -273,6 +287,7 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 if rendered:
                     self.last_is_tool_call = True
                     self.append_content("\n" + rendered + "\n")
+                self._record_file_change(tool_use_result)
 
         elif message.type == "error":
             self.append_error(message.content)
@@ -284,6 +299,8 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
             # Stop loading on turn completion (heuristic)
             self.session.stop_loading()
             self.append_content("\n")
+            # Show collapsed file-changes artifact after the turn output settles
+            sublime.set_timeout(self.session.show_file_changes_artifact, 0)
 
         elif message.type == "control_response":
             if hasattr(message, "content") and isinstance(message.content, dict):
@@ -388,6 +405,31 @@ class ClaudeMessageProcessor(BaseChatMessageProcessor):
                 return header + "\n\n" + self._render_diff_block(diff)
 
         return header
+
+    def _record_file_change(self, tool_use_result):
+        """Record an Edit/Write diff for the end-of-turn file changes artifact."""
+        file_path = tool_use_result.get("filePath")
+        cwd = (self.session.agent_thread.cwd
+               if self.session.agent_thread else self.session.cwd) or ""
+        abs_path, rel_path = _resolve_rel_path(file_path, cwd)
+
+        patches = tool_use_result.get("structuredPatch")
+        diff = _diff_from_structured_patch(patches)
+        if diff is None:
+            old_str = tool_use_result.get("oldString")
+            new_str = tool_use_result.get("newString")
+            if old_str is not None:
+                start_line = patches[0].get("newStart") if patches else None
+                diff = _make_edit_diff(old_str, new_str or "", rel_path, start_line=start_line)
+            else:
+                # Write with no patch data: treat as a new file
+                content = tool_use_result.get("content") or ""
+                if content:
+                    lines = content.splitlines()
+                    diff = ("@@ -0,0 +1,{} @@\n".format(len(lines))
+                            + "\n".join("+" + l for l in lines) + "\n")
+
+        self.session.record_file_change(abs_path, rel_path, diff)
 
 
 class CodexMessageProcessor(BaseChatMessageProcessor):
