@@ -441,7 +441,7 @@ class InputPromptMarker:
     """
     HTML = (
         "<body id='chatview-input-marker' style='margin:0;padding:0'>"
-        "<span style='color:var(--accent);padding-right:0.2em'>❯</span>"
+        "<span style='color:var(--foreground);padding-right:0.2em'>❯</span>"
         "</body>"
     )
 
