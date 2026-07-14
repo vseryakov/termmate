@@ -42,10 +42,16 @@ CHAT_AGENT = "chatview_agent_provider"
 CHAT_SESSION_ID = "chatview_session_id"
 CHAT_VIEW_NAME = "Chat View"
 PACKAGE_NAME = "TermMate"
-PROMPT_PREFIX = "\n❯ "
+PROMPT_PREFIX = "\n❯ "  # transcript prefix for submitted prompts; the live input line uses InputPromptMarker instead
 
 # Global store for active ChatSession: window_id -> ChatSession
 chatview_clients = {}
+
+
+def input_editable_start(view):
+    """Start of the editable input text. CHAT_INPUT_START points at the newline
+    that precedes the input line; the ❯ marker is a phantom, not buffer text."""
+    return view.settings().get(CHAT_INPUT_START, 0) + 1
 
 
 class PlanMode(enum.Enum):
@@ -425,6 +431,46 @@ class AgentThread(threading.Thread):
                     self.loop
                 )
                 LOG.info(f"Updated Pi model to: {model}")
+
+
+class InputPromptMarker:
+    """
+    Renders the ❯ prompt as an inline phantom at the start of the input line,
+    keeping the marker out of the buffer text so the editable region starts at
+    column 0.
+    """
+    HTML = (
+        "<body id='chatview-input-marker' style='margin:0;padding:0'>"
+        "<span style='color:var(--accent);padding-right:0.2em'>❯</span>"
+        "</body>"
+    )
+
+    def __init__(self, view):
+        self.view = view
+        self.phantom_id = None
+
+    def update(self):
+        """Pin the marker at the input line start; re-add only if it drifted."""
+        start = input_editable_start(self.view)
+        if start > self.view.size():
+            # Input line not created yet (fresh view before term_chat_input_prompt)
+            return
+        if self.phantom_id is not None:
+            current = self.view.query_phantoms([self.phantom_id])
+            if current and current[0].begin() == start:
+                return
+            self.view.erase_phantom_by_id(self.phantom_id)
+        self.phantom_id = self.view.add_phantom(
+            "chatview_input_marker",
+            sublime.Region(start, start),
+            self.HTML,
+            sublime.LAYOUT_INLINE,
+        )
+
+    def clear(self):
+        if self.phantom_id is not None:
+            self.view.erase_phantom_by_id(self.phantom_id)
+            self.phantom_id = None
 
 
 class ModelPanel:
@@ -947,6 +993,10 @@ class ChatSession:
         self.loading_animation = LoadingAnimation(self.chat_view)
 
         self.model_phantom = ModelPanel(self.chat_view, self.window)
+        self.input_marker = InputPromptMarker(self.chat_view)
+        if self.chat_view.settings().has(CHAT_INPUT_START):
+            # Reconnect case: input line already exists, pin the marker now
+            self.input_marker.update()
         self.rewind_confirm_panel = RewindConfirmPanel(self.chat_view)
         self.permission_panel = PermissionPanel(
             self.chat_view, self.window, self._handle_permission_decision
@@ -1205,6 +1255,7 @@ class ChatSession:
     def stop(self):
         self.loading_animation.stop()
         self.model_phantom.clear()
+        self.input_marker.clear()
         self.rewind_confirm_panel.clear()
         self.permission_panel.clear_all()
         self.implement_plan_phantoms.update([])
@@ -1748,9 +1799,8 @@ class TermChatSendInputCommand(sublime_plugin.TextCommand):
             sublime.status_message(f"No active {PACKAGE_NAME} session found")
             return
 
-        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
-        input_region = sublime.Region(input_start + len(PROMPT_PREFIX), self.view.size())
-        user_input = self.view.substr(input_region).strip()
+        editable_start = input_editable_start(self.view)
+        user_input = self.view.substr(sublime.Region(editable_start, self.view.size())).strip()
 
         if not user_input:
             return
@@ -1759,6 +1809,11 @@ class TermChatSendInputCommand(sublime_plugin.TextCommand):
             sublime.status_message("Sending... (Cmd+Esc to stop)")
         else:
             sublime.status_message("Sending... (Shift+Esc to stop)")
+
+        # Materialize the phantom marker as text so the transcript keeps the
+        # "❯ " prefix (replay and rewind cut_point math rely on it)
+        self.view.insert(edit, editable_start, "❯ ")
+        input_region = sublime.Region(editable_start + 2, self.view.size())
 
         # Show input text and next prompt (simulated local echo/confirmation)
         self.view.run_command("term_chat_input_prompt", {"text": ""})
@@ -1779,8 +1834,7 @@ class TermChatHistoryUpCommand(sublime_plugin.TextCommand):
             return
 
         session = chatview_clients[window.id()]
-        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
+        editable_start = input_editable_start(self.view)
 
         # History navigation
         if session.history_index == len(session.history):
@@ -1818,8 +1872,7 @@ class TermChatHistoryDownCommand(sublime_plugin.TextCommand):
             else:
                 text_to_show = session.history[session.history_index]
 
-            input_start = self.view.settings().get(CHAT_INPUT_START, 0)
-            editable_start = input_start + len(PROMPT_PREFIX)
+            editable_start = input_editable_start(self.view)
             self._replace_input(edit, text_to_show, editable_start)
 
     def _replace_input(self, edit, text, start_point):
@@ -1899,8 +1952,7 @@ class ChatViewListener(sublime_plugin.EventListener):
         if not view.settings().has(CHAT_INPUT_START):
             return
 
-        input_start = view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
+        editable_start = input_editable_start(view)
 
         new_sel = []
         changed = False
@@ -1950,8 +2002,7 @@ class ChatViewListener(sublime_plugin.EventListener):
                     if session.message_processor.open_tool_file(line_text, window, view=view, point=click_point):
                         return ("noop", {})
 
-        input_start = view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
+        editable_start = input_editable_start(view)
 
         # Handle move commands for history navigation
         if command_name == "move" and args and args.get("by") == "lines":
@@ -2016,8 +2067,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             return None
 
         # Check if in editable area
-        input_start = view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
+        editable_start = input_editable_start(view)
         pos = locations[0]
 
         if pos < editable_start:
@@ -2145,8 +2195,7 @@ class ChatViewListener(sublime_plugin.EventListener):
             return
 
         # Check if in editable area
-        input_start = view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
+        editable_start = input_editable_start(view)
         if pos < editable_start:
             return
 
@@ -2170,8 +2219,7 @@ class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
     def run(self, edit, cut_point, rewind_text=None):
         if rewind_text is None:
             # Preserve whatever the user has typed in the current input area.
-            input_start = self.view.settings().get(CHAT_INPUT_START, 0)
-            editable_start = input_start + len(PROMPT_PREFIX)
+            editable_start = input_editable_start(self.view)
             rewind_text = self.view.substr(sublime.Region(editable_start, self.view.size())).strip()
 
         if cut_point < self.view.size():
@@ -2186,13 +2234,16 @@ class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
                 plan_mode=chatview_clients[window.id()].plan_mode
             )
 
-        self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
+        self.view.insert(edit, self.view.size(), "\n")
         if rewind_text:
             self.view.insert(edit, self.view.size(), rewind_text)
         end = self.view.size()
         self.view.sel().clear()
         self.view.sel().add(sublime.Region(end))
         self.view.show(end)
+
+        if window and window.id() in chatview_clients:
+            chatview_clients[window.id()].input_marker.update()
 
 
 class TermChatOutputAppendCommand(sublime_plugin.TextCommand):
@@ -2217,14 +2268,17 @@ class TermChatInputPromptCommand(sublime_plugin.TextCommand):
             session = chatview_clients[window.id()]
             session.model_phantom.update(plan_mode=session.plan_mode)
 
-        # Next input prompt
-        self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
+        # Next input prompt (the ❯ itself is the InputPromptMarker phantom)
+        self.view.insert(edit, self.view.size(), "\n")
         if text:
             self.view.insert(edit, self.view.size(), text + " ")
         end = self.view.size()
         self.view.sel().clear()
         self.view.sel().add(sublime.Region(end))
         self.view.show(end)
+
+        if window and window.id() in chatview_clients:
+            chatview_clients[window.id()].input_marker.update()
 
 
 class TermChatAddContextCommand(sublime_plugin.WindowCommand):
