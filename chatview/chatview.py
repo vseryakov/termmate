@@ -956,7 +956,7 @@ class ChatSession:
         self.history_stash = ""
         self.permission_requests = {} # Map of request_id -> (tool_name, input_data)
         self.available_models = []  # Will be populated from control_response
-        self.prompt_regions = [] # List of (Region, uuid) for submitted prompts
+        self.prompt_regions = [] # List of (Region, uuid, phantom_index) for submitted prompts
         self.prompt_button_phantoms = [] # List of PhantomSet, parallel to prompt_regions
         self.session_allow_all = False
         # Only persist session_id after the first user message
@@ -1385,14 +1385,16 @@ class ChatSession:
         self.prompt_button_phantoms = self.prompt_button_phantoms[:phantom_index]
         self._redraw_prompt_highlights()
 
+        rewind_text = self.chat_view.substr(region)
+
         self.session_allow_all = False
         self.has_sent_message = True
         self.chat_view.settings().set(CHAT_SESSION_ID, new_session_id)
 
         if cut_point >= 0:
-            self.chat_view.run_command("term_chat_rewind_truncate", {"cut_point": cut_point})
+            self.chat_view.run_command("term_chat_rewind_truncate", {"cut_point": cut_point, "rewind_text": rewind_text})
         else:
-            self.chat_view.run_command("term_chat_input_prompt", {"text": ""})
+            self.chat_view.run_command("term_chat_input_prompt", {"text": rewind_text})
 
         self.chat_view.run_command(
             "term_chat_output_append",
@@ -2161,15 +2163,16 @@ class ChatViewListener(sublime_plugin.EventListener):
 class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
     """
     Erase everything from cut_point to end of the view, then set up a
-    fresh prompt area. The user text is read from the view before erasing.
+    fresh prompt area. rewind_text, when provided, is placed in the prompt
+    area (the original user input at the rewind point); otherwise the current
+    in-progress input is preserved.
     """
-    def run(self, edit, cut_point):
-        # Capture whatever the user has typed in the current (post-submit) input
-        # area so we can restore it after truncation.  CHAT_INPUT_START points at
-        # the "\n\n\n" separator; the editable region starts after PROMPT_PREFIX.
-        input_start = self.view.settings().get(CHAT_INPUT_START, 0)
-        editable_start = input_start + len(PROMPT_PREFIX)
-        user_text = self.view.substr(sublime.Region(editable_start, self.view.size())).strip()
+    def run(self, edit, cut_point, rewind_text=None):
+        if rewind_text is None:
+            # Preserve whatever the user has typed in the current input area.
+            input_start = self.view.settings().get(CHAT_INPUT_START, 0)
+            editable_start = input_start + len(PROMPT_PREFIX)
+            rewind_text = self.view.substr(sublime.Region(editable_start, self.view.size())).strip()
 
         if cut_point < self.view.size():
             self.view.erase(edit, sublime.Region(cut_point, self.view.size()))
@@ -2184,8 +2187,8 @@ class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
             )
 
         self.view.insert(edit, self.view.size(), PROMPT_PREFIX)
-        if user_text:
-            self.view.insert(edit, self.view.size(), user_text)
+        if rewind_text:
+            self.view.insert(edit, self.view.size(), rewind_text)
         end = self.view.size()
         self.view.sel().clear()
         self.view.sel().add(sublime.Region(end))
