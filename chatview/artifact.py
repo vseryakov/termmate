@@ -33,9 +33,9 @@ class FileChangesArtifact:
         self.view = view
         self.window = window
         self.input_start_key = input_start_key
-        self.file_changes = {}  # abs_path -> {"rel_path": str, "diffs": [diff_text]}
+        self.file_changes = {}  # abs_path -> {"rel_path": str, "diffs": [], "add": int, "del": int}
         self.pending_changed_files = []  # abs paths changed since last render
-        self.file_regions = []  # List of (Region, abs_path) for rendered file lines
+        self.file_regions = []  # List of (Region, abs_path, rel_path, diffs_snapshot) for rendered file lines
 
     @staticmethod
     def _count_diff_lines(diff_text):
@@ -80,22 +80,26 @@ class FileChangesArtifact:
         text = "\n" + header + "\n"
         new_regions = []
         for abs_path in files:
-            entry = self.file_changes.get(abs_path, {})
+            entry = self.file_changes.pop(abs_path, {})
             rel = entry.get("rel_path") or abs_path
             add = entry.get("add", 0)
             del_ = entry.get("del", 0)
             stat = "  +{} -{}".format(add, del_) if (add or del_) else ""
             start = base + len(text) + 4
             text += "    " + rel + stat + "\n"
-            new_regions.append((sublime.Region(start, start + len(rel)), abs_path))
+            new_regions.append((sublime.Region(start, start + len(rel)), abs_path, rel, list(entry.get("diffs", []))))
 
         # Fold from end of header line to end of last file line (excl. trailing \n)
         fold_start = base + 1 + len(header)
         fold_end = base + len(text) - 1
 
+        # Non-blank zero-indent terminator on the line after the gutter fold arrow
+        # The char below is (NBSP): renders blank, not indent whitespace.
+        text += " "
+
         view.run_command("term_chat_output_append", {"text": text})
 
-        self.file_regions.extend(new_regions)
+        self.file_regions.extend(new_regions)  # (Region, abs_path, rel_path, diffs_snapshot)
         self._redraw_regions()
         view.fold(sublime.Region(fold_start, fold_end))
 
@@ -104,7 +108,7 @@ class FileChangesArtifact:
         if self.file_regions:
             self.view.add_regions(
                 ARTIFACT_REGION_KEY,
-                [r for r, _ in self.file_regions],
+                [r for r, *_ in self.file_regions],
                 ARTIFACT_REGION_SCOPE,
                 "",
                 ARTIFACT_REGION_FLAGS
@@ -121,21 +125,19 @@ class FileChangesArtifact:
             for folded in self.view.folded_regions():
                 if folded.contains(point):
                     return False
-        for region, abs_path in self.file_regions:
+        for region, abs_path, rel_path, diffs in self.file_regions:
             if region.contains(point):
-                self.open_file_diff(abs_path)
+                self._open_diff(abs_path, rel_path, diffs)
                 return True
         return False
 
-    def open_file_diff(self, abs_path):
-        """Open a read-only diff view with all recorded diffs for abs_path."""
-        entry = self.file_changes.get(abs_path)
-        if not entry or not entry["diffs"]:
+    def _open_diff(self, abs_path, rel_path, diffs):
+        """Open a read-only diff view for the given turn's diffs."""
+        if not diffs:
             sublime.status_message("No recorded changes for this file")
             return
-        rel = entry["rel_path"]
-        parts = ["diff a/{0} b/{0}\n--- a/{0}\n+++ b/{0}\n".format(rel)]
-        for d in entry["diffs"]:
+        parts = ["diff a/{0} b/{0}\n--- a/{0}\n+++ b/{0}\n".format(rel_path)]
+        for d in diffs:
             parts.append(d if d.endswith("\n") else d + "\n")
 
         # Close a stale diff view for the same file before reopening
@@ -144,15 +146,16 @@ class FileChangesArtifact:
                 v.close()
                 break
 
-        name = os.path.basename(rel) + " (changes)"
+        name = os.path.basename(rel_path) + " (changes)"
         diff_view = utils.show_diff_text(self.window, "".join(parts), name)
         diff_view.settings().set(DIFF_VIEW_PATH_KEY, abs_path)
 
     def truncate(self, cut_point):
         """Drop artifact file regions that fall inside a truncated tail (rewind)."""
         self.pending_changed_files = []
+        self.file_changes = {}
         self.file_regions = [
-            (r, p) for r, p in self.file_regions if r.end() < cut_point
+            (r, p, rel, diffs) for r, p, rel, diffs in self.file_regions if r.end() < cut_point
         ]
         self._redraw_regions()
 

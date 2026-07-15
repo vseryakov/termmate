@@ -458,6 +458,8 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
                 self.append_content("\n")
             self.last_is_tool_call = True
             self.append_content(self._format_tool_block(message.content) + "\n")
+            if message.content.get("name") == "fileChange":
+                self._record_file_changes(message.content)
 
         elif message.type == "error":
             self.append_error(message.content)
@@ -527,11 +529,13 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
 
                 self.append_content("\n")
                 self.append_content(plan_text)
-                self.append_content("\n")
+                self.append_content("\n", flush=True)
 
                 # Add Implement button if in plan mode
                 if self.session.agent_thread and self.session.agent_thread.anthropic_config.get("plan_mode"):
                     sublime.set_timeout(lambda pt=plan_text: self.session.show_implement_plan_button(pt), 0)
+            # Show the artifact last so later appends don't land at its fold boundary
+            sublime.set_timeout(self.session.show_file_changes_artifact, 0)
 
     def _format_tool_block(self, block):
         name = block.get("name")
@@ -576,6 +580,19 @@ class CodexMessageProcessor(BaseChatMessageProcessor):
             return header
 
         return f"⏺ {name}" if name else ""
+
+    def _record_file_changes(self, block):
+        """Record fileChange diffs for the end-of-turn file changes artifact."""
+        changes = block.get("changes", [])
+        cwd = (self.session.agent_thread.cwd
+               if self.session.agent_thread else self.session.cwd) or ""
+        for change in changes:
+            path = change.get("path", "")
+            if not path:
+                continue
+            abs_path, rel_path = _resolve_rel_path(path, cwd)
+            diff_text = change.get("diff") or ""
+            self.session.record_file_change(abs_path, rel_path, diff_text or None)
 
 class PiMessageProcessor(BaseChatMessageProcessor):
     _TOOL_FILE_NAMES = ("read", "edit", "write")

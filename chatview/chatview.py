@@ -122,6 +122,9 @@ def _reconnect_chat_view(view):
     add_dirs = get_all_folders(view) if share_folders else []
     session_id = ChatSession.get_view_session_id(view)
 
+    # Don't draw the NBSP fold terminator appended after the artifact list
+    view.settings().set("draw_unicode_white_space", "none")
+
     session = ChatSession(window, view, cwd, add_dirs=add_dirs, session_id=session_id)
     chatview_clients[window_id] = session
     # Restore the model phantom at the existing CHAT_INPUT_START position
@@ -1711,10 +1714,12 @@ class TermChatCliCommand(sublime_plugin.WindowCommand):
         chat_view.settings().set("word_wrap", True)
         # Needed so the file-changes artifact can be expanded via the gutter
         chat_view.settings().set("fold_buttons", True)
+        # Don't draw the NBSP fold terminator appended after the artifact list
+        chat_view.settings().set("draw_unicode_white_space", "none")
         chat_view.settings().set(CHAT_VIEW_FLAG, True)
 
         shortcut = "Command+Enter" if sublime.platform() == "osx" else "Ctrl+Enter"
-        welcome_text = "\nType your message and press %s to send.\n\n" % shortcut
+        welcome_text = "\nType your message and press %s to send.\n" % shortcut
 
         chat_view.run_command("append", {"characters": f"Starting {PACKAGE_NAME} agent\n"})
 
@@ -2250,7 +2255,7 @@ class TermChatRewindTruncateCommand(sublime_plugin.TextCommand):
         if cut_point < self.view.size():
             self.view.erase(edit, sublime.Region(cut_point, self.view.size()))
 
-        self.view.insert(edit, self.view.size(), "\n\n\n")
+        self.view.insert(edit, self.view.size(), "\n")
         self.view.settings().set(CHAT_INPUT_START, self.view.size())
 
         window = self.view.window()
@@ -2284,7 +2289,7 @@ class TermChatOutputAppendCommand(sublime_plugin.TextCommand):
 class TermChatInputPromptCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, text):
-        self.view.insert(edit, self.view.size(), "\n\n\n")
+        self.view.insert(edit, self.view.size(), "\n\n\n\n")
         self.view.settings().set(CHAT_INPUT_START, self.view.size())
 
         # Update model phantom at new position
