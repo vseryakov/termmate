@@ -77,6 +77,21 @@ def show_diff(window, old_text, new_text, name):
     v.set_read_only(True)
 
 
+def show_diff_text(window, diff_text, name):
+    """
+    Show pre-built unified diff text in a new read-only scratch view.
+
+    Returns the created view.
+    """
+    v = window.new_file()
+    v.set_name(name)
+    v.set_scratch(True)
+    v.assign_syntax('Packages/Diff/Diff.sublime-syntax')
+    v.run_command('append', {'characters': diff_text, 'disable_tab_translation': True})
+    v.set_read_only(True)
+    return v
+
+
 class MarkdownFormatter:
     """
     Helper class to format markdown text, specifically aligning tables

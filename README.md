@@ -18,7 +18,7 @@ Install TermMate via [Package Control](https://packagecontrol.io/packages/TermMa
 2. Type `Package Control: Install Package` and press `Enter`.
 3. Search for `TermMate` and press `Enter`.
 
-**Or install manually from [Releases](https://github.com/flashmodel/termmate/releases):**
+You can also install manually from github releases:
 
 1. Download `TermMate.sublime-package` from the [latest release](https://github.com/flashmodel/termmate/releases).
 2. Copy `TermMate.sublime-package` into your Sublime Text **Installed Packages** directory:
@@ -33,7 +33,7 @@ TermMate relies on external agent CLIs. If you already have Claude Code, Codex, 
 
 Otherwise, the easiest way is to install directly from within Sublime Text: open the Command Palette, type `TermMate: Install Agent`, and select the agent you want. TermMate will run the installation in dedicated panel and notify you when it's complete. CLIs are installed to `~/.local/bin` on macOS/Linux and `%APPDATA%\npm` on Windows.
 
-**Or install manually from your terminal:**
+**or install manually from your terminal:**
 
 **Claude Code:**
 ```bash
@@ -76,7 +76,7 @@ codex login
 /login
 ```
 
-Alternatively, to skip the CLI login — for example authenticating Pi Agent with a Gemini API key — add this to `TermMate.sublime-settings`:
+Alternatively, you can use `env` settings to skip the CLI login. Open the settings file via **Preferences → Package Settings → TermMate → Settings** and add env:
 
 ```json
 {
@@ -85,6 +85,8 @@ Alternatively, to skip the CLI login — for example authenticating Pi Agent wit
     }
 }
 ```
+
+The example above sets `GEMINI_API_KEY` for Pi Agent authentication.
 
 ### 4. Start Chat
 
@@ -141,9 +143,12 @@ Control how much the agent can do without asking you first: `TermMate: Approve M
 | **Allow Edit** | Auto-approves safe read/edit operations; still prompts for shell commands. |
 | **Accept All** | Auto-approves everything, including shell execution. Maximum autonomy. |
 
-### Switch Agent & Model
+### Switch Agent
 
 Use `TermMate: Switch Agent` to swap between Claude, Codex, and Pi Agent at any time.
+
+### Select Model
+
 Use `TermMate: Select Model` to pick a specific LLM model per agent (e.g. `claude-opus-4-5` vs `claude-sonnet-4-5`).
 
 ## Session Management: Clear, Resume & Rewind
@@ -174,7 +179,7 @@ When confirmed, TermMate forks the session at the selected prompt, removes all s
 | **Navigate Input History** | `Up` / `Down` | `Up` / `Down` | - |
 | **Mention File** | `@` | `@` | - |
 | **Set Workspace** | - | - | `TermMate: Set Working Directory` |
-| **Switch Mode** | - | - | `TermMate: Plan Mode` |
+| **Plan Mode** | - | - | `TermMate: Plan Mode` |
 | **Approve Mode** | - | - | `TermMate: Approve Mode` |
 
 ## Configuration
