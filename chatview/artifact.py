@@ -16,6 +16,36 @@ ARTIFACT_REGION_FLAGS = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime
 DIFF_VIEW_PATH_KEY = "chatview_artifact_diff_path"
 
 
+def _agent_data_dirs(extra_env=None):
+    """Return absolute paths of agent-private data dirs (memory, sessions, config).
+
+    Resolution matches how agents are spawned: settings ``env`` (extra_env)
+    overrides the plugin process environment, then falls back to defaults.
+    """
+    env = dict(os.environ)
+    env.update(extra_env or {})
+    dirs = [
+        env.get("CLAUDE_CONFIG_DIR") or "~/.claude",
+        env.get("CODEX_HOME") or "~/.codex",
+        "~/.pi",  # pi CLI has no dir override (see genfoundry/pi_agent.py)
+    ]
+    return [os.path.realpath(os.path.expanduser(d)) for d in dirs]
+
+
+def is_agent_data_path(abs_path, extra_env=None):
+    """True if abs_path is inside an agent's private data directory."""
+    if not abs_path:
+        return False
+    try:
+        real = os.path.realpath(abs_path)
+    except (OSError, ValueError):
+        return False
+    for d in _agent_data_dirs(extra_env):
+        if real == d or real.startswith(d + os.sep):
+            return True
+    return False
+
+
 class FileChangesArtifact:
     """
     Per-session store and renderer for the file changes artifact.
@@ -48,8 +78,15 @@ class FileChangesArtifact:
                 del_ += 1
         return add, del_
 
-    def record(self, abs_path, rel_path, diff_text):
-        """Record an edit diff so the file is listed in the end-of-turn artifact."""
+    def record(self, abs_path, rel_path, diff_text, extra_env=None):
+        """Record an edit diff so the file is listed in the end-of-turn artifact.
+
+        Edits inside agent-private data dirs (e.g. Claude memory files under
+        ~/.claude) are agent housekeeping, not project changes, and are skipped.
+        """
+        if is_agent_data_path(abs_path, extra_env):
+            LOG.debug("Artifact: skipping agent data file %s", abs_path)
+            return
         entry = self.file_changes.setdefault(
             abs_path, {"rel_path": rel_path, "diffs": [], "add": 0, "del": 0})
         if diff_text:

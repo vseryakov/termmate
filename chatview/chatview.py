@@ -1315,7 +1315,8 @@ class ChatSession:
 
     def record_file_change(self, abs_path, rel_path, diff_text):
         """Record an edit diff so the file is listed in the end-of-turn artifact."""
-        self.artifact.record(abs_path, rel_path, diff_text)
+        extra_env = self.agent_thread.anthropic_config.get("env") if self.agent_thread else None
+        self.artifact.record(abs_path, rel_path, diff_text, extra_env=extra_env)
 
     def show_file_changes_artifact(self):
         """Append the collapsed file changes artifact for the finished turn."""
